@@ -11,11 +11,6 @@ captions and sources, in the same order.
 
 Not affiliated with Are.na, Cosmos or Pinterest.
 
-## Try the demo
-
-**[tanguycaruel.github.io/to-arena/demo](https://tanguycaruel.github.io/to-arena/demo/)** walks through the whole tool
-with a simulated Pinterest, Cosmos and Are.na: no account needed, nothing real is read or written.
-
 ## Open it
 
 There is nothing to install. Pick one:
