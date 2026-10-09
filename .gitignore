@@ -1,6 +1,3 @@
-# ABC Areal is a commercial typeface: keep the files local.
-fonts/
-
 # Export files hold your saves.
 *-export-*.json
 

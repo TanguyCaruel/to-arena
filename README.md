@@ -114,12 +114,6 @@ node tests/import.test.mjs
 To publish a new version of the download, zip the files above (without `tests/`) in a folder named `To Are.na`,
 then attach `To-Arena.zip` to a new [release](https://github.com/TanguyCaruel/to-arena/releases).
 
-## Typeface
-
-The design follows an Are.na-style design system set in ABC Areal by Dinamo, a commercial typeface. Its files are
-not part of this repository; the page uses Helvetica Neue or Arial instead. If you hold a license, put
-`ABCAreal-Regular.woff2`, `ABCAreal-RegularItalic.woff2` and `ABCAreal-Bold.woff2` in a `fonts/` folder.
-
 ## License
 
-[MIT](LICENSE)
+Free and open source, under the [MIT license](LICENSE): use it, change it, share it.

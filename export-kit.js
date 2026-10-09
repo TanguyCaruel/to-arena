@@ -40,7 +40,7 @@ function exportKit() {
     root.innerHTML = `
       <style>
         .box{width:min(360px,calc(100vw - 32px));box-sizing:border-box;padding:16px;background:#fff;color:#333;
-          border:1px solid #e5e5e5;border-radius:3px;font:400 15px/20px "ABC Areal","Helvetica Neue",Helvetica,Arial,sans-serif;
+          border:1px solid #e5e5e5;border-radius:3px;font:400 15px/20px Arial,"Helvetica Neue",Helvetica,sans-serif;
           -webkit-font-smoothing:antialiased}
         .head{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;font-weight:700;font-size:16px}
         .status{min-height:20px;word-break:break-word}

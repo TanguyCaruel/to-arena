@@ -1,32 +1,8 @@
 /*
  * To Are.na · styles, after the “Are.na Style” design system: white, one typeface at 400,
- * grey for everything that isn't content, one dark blue for the main action. No shadow,
+ * grey for everything that isn't content, one dark blue for the main action. Set in Arial. No shadow,
  * no gradient, 3px corners on controls only.
  */
-
-@font-face {
-  font-family: 'ABC Areal';
-  src: url('fonts/ABCAreal-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'ABC Areal';
-  src: url('fonts/ABCAreal-RegularItalic.woff2') format('woff2');
-  font-weight: 400;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'ABC Areal';
-  src: url('fonts/ABCAreal-Bold.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
 
 :root {
   --surface: #ffffff;
@@ -42,7 +18,7 @@
   --on-accent: #ffffff;
   --focus-ring: var(--accent);
 
-  --font-sans: 'ABC Areal', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-sans: Arial, 'Helvetica Neue', Helvetica, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
 
   --space-1: 4px;
