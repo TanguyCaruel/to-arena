@@ -1,0 +1,10 @@
+# ABC Areal is a commercial typeface: keep the files local.
+fonts/
+
+# Export files hold your saves.
+*-export-*.json
+
+# Local tooling and system files.
+.claude/
+.DS_Store
+dist/

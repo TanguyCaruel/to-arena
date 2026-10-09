@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Scripts and styles only from this folder; network only to Are.na and the image hosts. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' file:; style-src 'self' file:; font-src 'self' file:; img-src 'self' file: data: https://cdn.cosmos.so https://i.pinimg.com; connect-src https://api.are.na https://*.amazonaws.com https://cdn.cosmos.so https://*.pinimg.com; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>To Are.na</title>
+    <meta name="description" content="Move your Cosmos and Pinterest saves into Are.na channels." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23fff'/%3E%3Cpath d='M6 16h17M17 9l7 7-7 7' fill='none' stroke='%23333' stroke-width='2.5' stroke-linecap='square'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Hidden by app.js on start: stays visible when the script doesn't run or is out of date. -->
+    <p class="boot-warning" id="boot-warning" role="alert">
+      This page isn’t running: its files are out of date, or scripts are blocked. Reload it (<kbd>⌘⇧R</kbd>), or open
+      <code>index.html</code> in Chrome, Safari, Firefox or Arc.
+    </p>
+
+    <header class="topbar">
+      <button type="button" class="topbar__mark" id="home">To Are.na</button>
+      <span class="topbar__account" id="topbar-account" hidden>
+        <span class="avatar" id="topbar-avatar" aria-hidden="true"></span>
+        <span id="topbar-name"></span>
+      </span>
+    </header>
+
+    <main class="page">
+      <h1 class="crumb" id="crumb">To Are.na</h1>
+      <p class="lede">Move your Cosmos and Pinterest saves into Are.na channels, in the same order, with their sources.</p>
+      <p class="vibe">
+        <strong>Vibe-coded.</strong> This tool was built with an AI assistant. It works well and is tested, but it isn’t
+        a polished product: try one small collection first.
+      </p>
+
+      <div class="layout">
+        <nav class="rail" aria-label="Steps">
+          <ol class="steps" id="steps"></ol>
+        </nav>
+
+        <div class="content">
+          <p class="step-count" id="step-count"></p>
+
+          <!-- Source -->
+          <section class="panel" data-step="source" aria-labelledby="h-source">
+            <h2 class="heading" id="h-source" tabindex="-1">Where are your saves?</h2>
+            <div class="choices">
+              <button type="button" class="choice" data-source="cosmos" aria-pressed="false">
+                <span class="choice__name">Cosmos</span>
+                <span class="choice__desc">Collections and sub-collections, carousels, captions and sources.</span>
+              </button>
+              <button type="button" class="choice" data-source="pinterest" aria-pressed="false">
+                <span class="choice__name">Pinterest</span>
+                <span class="choice__desc">Boards and their sections, pins with their links and videos.</span>
+              </button>
+            </div>
+          </section>
+
+          <!-- Export -->
+          <section class="panel" data-step="export" aria-labelledby="h-export" hidden>
+            <h2 class="heading" id="h-export" tabindex="-1">
+              Export from <span data-only="cosmos">Cosmos</span><span data-only="pinterest">Pinterest</span>
+            </h2>
+
+            <div data-only="cosmos">
+              <ol class="numbered">
+                <li>
+                  Drag this button to your bookmarks bar.
+                  <span class="inline-action">
+                    <a class="btn bookmarklet" id="bookmarklet-cosmos" href="#" title="Drag me to your bookmarks bar">Export from Cosmos</a>
+                  </span>
+                </li>
+                <li>Open <a href="https://www.cosmos.so" target="_blank" rel="noopener noreferrer">cosmos.so</a>, signed in, and click the bookmark. A small panel shows the progress.</li>
+                <li>Add the file it downloads below.</li>
+              </ol>
+              <details class="more">
+                <summary>No bookmarks bar? Use the console</summary>
+                <p>
+                  On cosmos.so, open the console (<kbd>⌥⌘J</kbd> in Chrome, Edge and Arc, <kbd>⌥⌘C</kbd> in Safari,
+                  <kbd>⌥⌘K</kbd> in Firefox), paste the script and press Enter. Only paste code you trust into a console:
+                  this script comes from this page and only reads your account.
+                </p>
+                <button type="button" class="btn btn--sm" data-copy="cosmos">Copy the script</button>
+                <span class="hint" data-copied="cosmos" role="status"></span>
+              </details>
+            </div>
+
+            <div data-only="pinterest">
+              <p class="muted">Pinterest blocks bookmarks that run scripts, so this export runs from your browser’s console.</p>
+              <ol class="numbered">
+                <li>Open your profile on <a href="https://www.pinterest.com" target="_blank" rel="noopener noreferrer">pinterest.com</a>, signed in.</li>
+                <li>
+                  Copy the script, then open the console: <kbd>⌥⌘J</kbd> in Chrome, Edge and Arc, <kbd>⌥⌘C</kbd> in Safari,
+                  <kbd>⌥⌘K</kbd> in Firefox.
+                  <span class="inline-action">
+                    <button type="button" class="btn btn--sm" data-copy="pinterest">Copy the script</button>
+                    <span class="hint" data-copied="pinterest" role="status"></span>
+                  </span>
+                </li>
+                <li>Paste it and press Enter. Chrome may first ask you to type <code>allow pasting</code>.</li>
+                <li>Add the file it downloads below.</li>
+              </ol>
+              <p class="hint">
+                Only paste code you trust into a console. This script comes from this page: it reads your boards, writes
+                nothing on Pinterest, and saves the result on your computer.
+              </p>
+              <details class="more">
+                <summary>Safari or Firefox?</summary>
+                <p>
+                  Safari shows the console once “Show features for web developers” is on, in Settings › Advanced. Firefox
+                  lets bookmarks run on Pinterest: drag this one to your bookmarks bar instead.
+                </p>
+                <a class="btn btn--sm bookmarklet" id="bookmarklet-pinterest" href="#" title="Drag me to your bookmarks bar">Export from Pinterest</a>
+              </details>
+            </div>
+
+            <label class="drop" id="drop">
+              <input type="file" id="file" accept=".json,application/json" />
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg>
+              <span class="drop__title" id="drop-title">Add your export file</span>
+              <span class="drop__hint">Drop the .json file here, or click to choose it.</span>
+            </label>
+            <p class="error" id="load-error" role="alert" hidden></p>
+            <p class="note">
+              The script only reads your account, with the session already open in your browser. It changes nothing and
+              sends your data nowhere except the downloaded file.
+            </p>
+          </section>
+
+          <!-- Choose -->
+          <section class="panel" data-step="choose" aria-labelledby="h-choose" hidden>
+            <h2 class="heading" id="h-choose" tabindex="-1">Choose what to bring</h2>
+            <p class="meta" id="export-summary"></p>
+            <div class="toolbar">
+              <input type="search" id="filter" placeholder="Filter" aria-label="Filter" />
+              <button type="button" class="btn btn--sm" id="select-all">Select all</button>
+              <button type="button" class="btn btn--sm" id="select-none">Select none</button>
+            </div>
+            <ul class="list" id="collections"></ul>
+            <label class="row row--library" id="library-row" hidden>
+              <input type="checkbox" id="include-library" />
+              <span class="thumb thumb--library" aria-hidden="true"></span>
+              <span class="row__text">
+                <span class="row__name">Whole library</span>
+                <span class="row__meta" id="library-meta"></span>
+              </span>
+            </label>
+            <div class="next">
+              <span class="meta" id="choose-count"></span>
+              <button type="button" class="btn" data-next="connect">
+                Continue <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+              </button>
+            </div>
+          </section>
+
+          <!-- Connect -->
+          <section class="panel" data-step="connect" aria-labelledby="h-connect" hidden>
+            <h2 class="heading" id="h-connect" tabindex="-1">Connect Are.na</h2>
+            <div id="connect-form">
+              <p>
+                Create a
+                <a href="https://www.are.na/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">personal access token</a>
+                with <strong>write</strong> access, then paste it here.
+              </p>
+              <form class="token-row" id="token-form" autocomplete="off">
+                <input type="password" id="token" placeholder="Personal access token" aria-label="Are.na personal access token" spellcheck="false" />
+                <button type="submit" class="btn" id="connect">Connect</button>
+              </form>
+              <label class="check"><input type="checkbox" id="remember" /> Remember it on this computer</label>
+              <p class="hint">
+                Unticked, it is forgotten when you close the tab. Ticked, it stays in this browser, where other local pages
+                could read it: avoid on a shared computer, and revoke it on Are.na once you are done.
+              </p>
+              <p class="error" id="token-error" role="alert" hidden></p>
+            </div>
+            <div class="account" id="account" hidden>
+              <span class="avatar" id="account-avatar" aria-hidden="true"></span>
+              <span id="account-text"></span>
+              <button type="button" class="link" id="disconnect">Disconnect</button>
+            </div>
+
+            <div class="settings">
+              <h3 class="col-head">Settings</h3>
+              <label class="field">
+                <span>Channel privacy</span>
+                <select id="visibility">
+                  <option value="mirror">Same as the source (private stays private)</option>
+                  <option value="private">All private</option>
+                  <option value="closed">All closed (visible, only you add to them)</option>
+                  <option value="public">All public</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Carousels</span>
+                <select id="carousel">
+                  <option value="first">Cover image only</option>
+                  <option value="all">Every image, one block each</option>
+                </select>
+              </label>
+              <details class="more">
+                <summary>Advanced options</summary>
+                <label class="check"><input type="checkbox" id="nest" checked /> <span id="nest-label">Put sub-collections inside their parent channel</span></label>
+                <label class="check">
+                  <input type="checkbox" id="arena-links" checked />
+                  <span>Connect content saved from Are.na to its original block or channel instead of copying it</span>
+                </label>
+                <label class="check" data-only="cosmos"><input type="checkbox" id="captions" checked /> Use Cosmos captions as titles and descriptions</label>
+                <label class="check" data-only="cosmos"><input type="checkbox" id="credits" checked /> Credit the original author in the description</label>
+                <label class="field">
+                  <span>Sending images</span>
+                  <select id="image-mode">
+                    <option value="url">By link: Are.na fetches each file (faster)</option>
+                    <option value="upload">Upload from this browser (slower)</option>
+                  </select>
+                </label>
+                <p class="hint">When Are.na refuses a link, the file is uploaded from this browser instead.</p>
+                <button type="button" class="link" id="forget-journal">Forget the import history of this account</button>
+              </details>
+            </div>
+
+            <div class="next">
+              <span></span>
+              <button type="button" class="btn" id="connect-next">
+                Continue <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+              </button>
+            </div>
+          </section>
+
+          <!-- Transfer -->
+          <section class="panel" data-step="transfer" aria-labelledby="h-transfer" hidden>
+            <h2 class="heading" id="h-transfer" tabindex="-1">Review and transfer</h2>
+            <dl class="meta-table" id="plan-table"></dl>
+            <p class="note-box" id="plan-warning" hidden></p>
+            <div class="actions">
+              <button type="button" class="btn btn--primary" id="start">Transfer</button>
+              <button type="button" class="btn" id="simulate">Simulate first</button>
+            </div>
+
+            <section class="run" id="run" hidden aria-live="polite">
+              <div class="run__head">
+                <span data-run="phase">Preparing…</span>
+                <span class="run__count" data-run="count"></span>
+              </div>
+              <div class="bar" role="progressbar" aria-label="Progress" data-run="bar" aria-valuemin="0" aria-valuemax="100"><i data-run="fill"></i></div>
+              <p class="hint" data-run="wait"></p>
+              <dl class="meta-table counters">
+                <dt>Blocks created</dt><dd data-count="created">0</dd>
+                <dt>Connections</dt><dd data-count="connected">0</dd>
+                <dt>Already there</dt><dd data-count="skipped">0</dd>
+                <dt>Failed</dt><dd data-count="failed">0</dd>
+              </dl>
+              <div class="result" data-run="result" hidden></div>
+              <h3 class="col-head" id="channels-head" hidden>Channels</h3>
+              <ul class="channels" id="channels"></ul>
+              <details class="more">
+                <summary>Details</summary>
+                <ol class="log" data-run="log"></ol>
+              </details>
+            </section>
+          </section>
+
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p>
+        Runs in your browser. Your Are.na token is only sent to <code>api.are.na</code>. Not affiliated with Are.na, Cosmos
+        or Pinterest.
+        <a href="https://github.com/TanguyCaruel/to-arena" target="_blank" rel="noopener noreferrer">Source and download on GitHub</a>.
+      </p>
+    </footer>
+
+    <script src="export-kit.js"></script>
+    <script src="cosmos-export.js"></script>
+    <script src="pinterest-export.js"></script>
+    <script src="arena.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
