@@ -21,7 +21,8 @@
     node.append(...children.filter((c) => c != null));
     return node;
   };
-  const img = (url, alt = '') => el('img', { src: M.placeholder(url), alt, loading: 'lazy' });
+  /* Generated in the page, so loaded at once: lazy loading wouldn't fire inside the scrolling windows. */
+  const img = (url, alt = '') => el('img', { src: M.placeholder(url), alt });
   const count = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
   /* A window over the page; Escape or × closes it. */

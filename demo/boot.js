@@ -5,7 +5,7 @@
 (async () => {
   'use strict';
   /* Bumped with each release, so browsers fetch the new scripts instead of cached ones. */
-  const VERSION = '2.0.0';
+  const VERSION = '2.0.1';
   const app = document.getElementById('app');
   const load = (src) =>
     new Promise((resolve, reject) => {
