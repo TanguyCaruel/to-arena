@@ -1,16 +1,19 @@
 /*
  * To Are.na · Pinterest exporter
  *
- * Runs on https://www.pinterest.com, from the browser console (Pinterest's security policy blocks
- * bookmarklets in most browsers). Read-only: nothing changes on Pinterest. It reads the boards of
- * the profile you are on, or of your own account, with their sections and pins, then downloads a
- * JSON file for the import page. Secret boards are included when the profile is yours.
+ * Runs on pinterest.com, from the browser console (Pinterest's security policy blocks bookmarklets
+ * outside Firefox). Read-only: nothing changes on Pinterest.
+ *   - On a board's page, it takes that board, with its sections.
+ *   - On a profile, it lists the boards and lets you pick (secret ones too when it's yours).
+ * Then it hands the pins to the To Are.na tab that opened Pinterest, or downloads a JSON file.
  *
- * `env` lets it run outside a browser (tests, Node): { origin, username, fetch, headers, ui, save }.
+ * `env` lets it run elsewhere (tests, demo): { origin, path, username, fetch, headers, toolOrigin,
+ * ui, mount, deliver, save }.
  */
 async function pinterestExport(env = {}, kit = exportKit()) {
   /* The page's own domain: Pinterest serves local ones (fr.pinterest.com, pinterest.co.uk…). */
   const ORIGIN = env.origin || (typeof location !== 'undefined' ? location.origin : 'https://www.pinterest.com');
+  const PATH = env.path ?? (typeof location !== 'undefined' ? location.pathname : '/');
   const PAGE_SIZE = 50;
   const RESERVED = new Set(
     'pin,search,ideas,today,settings,business,resource,news_hub,notifications,board,explore,videos,shopping,login,signup,password,about,homefeed,_'.split(',')
@@ -18,25 +21,27 @@ async function pinterestExport(env = {}, kit = exportKit()) {
 
   const { sleep } = kit;
   const doFetch = env.fetch || ((...args) => fetch(...args));
-  const ui = env.ui || kit.createOverlay('Pinterest → Are.na · export');
+  const ui = env.ui || kit.createOverlay('Pinterest → Are.na', { mount: env.mount });
 
   const cookie = (name) =>
     typeof document === 'undefined' ? '' : (document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`)) || [])[1] || '';
 
-  function pageState() {
+  function signedInUsername() {
     try {
-      return JSON.parse(document.getElementById('__PWS_DATA__').textContent);
+      return JSON.parse(document.getElementById('__PWS_DATA__').textContent)?.context?.user?.username || null;
     } catch {
       return null;
     }
   }
 
-  /* The profile in the address bar, else the signed-in account. */
-  function detectUsername() {
-    if (env.username) return env.username;
-    const first = location.pathname.split('/').filter(Boolean)[0];
-    if (first && !RESERVED.has(first.toLowerCase())) return decodeURIComponent(first);
-    return pageState()?.context?.user?.username || null;
+  /* Who and what the address bar points at: /user/, /user/board/ or /user/board/section/. */
+  function pageTarget() {
+    const parts = PATH.split('/').filter(Boolean).map((p) => decodeURIComponent(p));
+    if (!parts.length || RESERVED.has(parts[0].toLowerCase())) {
+      return { username: env.username || signedInUsername(), board: null };
+    }
+    const board = parts[1] && !parts[1].startsWith('_') ? parts[1] : null;
+    return { username: parts[0], board };
   }
 
   async function resource(name, options, attempt = 0) {
@@ -91,6 +96,7 @@ async function pinterestExport(env = {}, kit = exportKit()) {
   }
 
   const clean = (s) => (typeof s === 'string' ? s.trim() : '') || null;
+  const isSecret = (b) => b.privacy === 'secret' || b.privacy === 'protected';
 
   /* The original file when Pinterest lists one, else the widest size, rewritten to /originals/. */
   function bestImage(images) {
@@ -107,8 +113,7 @@ async function pinterestExport(env = {}, kit = exportKit()) {
   function bestVideo(video) {
     const list = video?.video_list || {};
     const preferred = ['V_720P', 'V_EXP7', 'V_EXP6', 'V_EXP5', 'V_EXP4', 'V_EXP3'].map((k) => list[k]);
-    const mp4 = [...preferred, ...Object.values(list)].find((v) => /\.mp4(\?|$)/.test(v?.url || ''));
-    return mp4 || null;
+    return [...preferred, ...Object.values(list)].find((v) => /\.mp4(\?|$)/.test(v?.url || '')) || null;
   }
 
   const asMedia = (type, m) => (m?.url ? { type, url: m.url, width: m.width ?? null, height: m.height ?? null } : null);
@@ -163,26 +168,49 @@ async function pinterestExport(env = {}, kit = exportKit()) {
   try {
     ui.status('Connecting to Pinterest…');
     if (!env.origin && !/(^|\.)pinterest\.[a-z.]+$/.test(location.hostname)) {
-      throw new Error('Open your profile on pinterest.com (signed in), then run the script again from that tab.');
+      throw new Error('Open Pinterest (signed in), then run the script again from that tab.');
     }
-    const username = detectUsername();
-    if (!username) {
-      throw new Error('Open your Pinterest profile (click your picture, top right), then run the script again.');
-    }
+    const target = pageTarget();
+    if (!target.username) throw new Error('Open your Pinterest profile or one of your boards, then run the script again.');
+    const { username } = target;
 
-    ui.status(`Reading the boards of @${username}…`);
-    const boards = (
-      await paginate('Boards', {
-        username,
-        page_size: PAGE_SIZE,
-        privacy_filter: 'all',
-        sort: 'last_pinned_to',
-        field_set_key: 'profile_grid_item',
-        filter_stories: false,
-        include_archived: true,
-      })
-    ).filter((b) => b?.id && b.type !== 'story');
-    if (!boards.length) throw new Error(`No boards found for @${username}.`);
+    let boards = null;
+    if (target.board) {
+      ui.status('Reading this board…');
+      try {
+        const board = (await resource('Board', { username, slug: target.board, field_set_key: 'detailed' })).resource_response.data;
+        if (board?.id) boards = [board];
+      } catch {
+        /* not a board after all: offer the profile's boards */
+      }
+    }
+    if (!boards) {
+      ui.status(`Reading the boards of @${username}…`);
+      const all = (
+        await paginate('Boards', {
+          username,
+          page_size: PAGE_SIZE,
+          privacy_filter: 'all',
+          sort: 'last_pinned_to',
+          field_set_key: 'profile_grid_item',
+          filter_stories: false,
+          include_archived: true,
+        })
+      ).filter((b) => b?.id && b.type !== 'story');
+      if (!all.length) throw new Error(`No boards found for @${username}.`);
+      const picked = await ui.pick({
+        heading: `Pick the boards of @${username} to send`,
+        noun: 'board',
+        items: all.map((b) => ({
+          id: String(b.id),
+          name: b.name,
+          meta: [kit.count(b.pin_count || 0, 'pin'), b.section_count ? kit.count(b.section_count, 'section') : '', isSecret(b) ? 'secret' : '']
+            .filter(Boolean)
+            .join(' · '),
+        })),
+      });
+      boards = all.filter((b) => picked.ids.includes(String(b.id)));
+    }
 
     const collections = [];
     const elements = {};
@@ -198,14 +226,14 @@ async function pinterestExport(env = {}, kit = exportKit()) {
     const total = boards.reduce((n, b) => n + (b.pin_count || 0), 0);
     let done = 0;
     for (const [i, b] of boards.entries()) {
-      const label = `Board ${i + 1} of ${boards.length} · ${b.name}`;
+      const label = boards.length > 1 ? `Board ${i + 1} of ${boards.length} · ${b.name}` : b.name;
       const boardUrl = `https://www.pinterest.com${b.url || '/'}`;
       const board = {
         id: String(b.id),
         name: b.name,
         slug: (b.url || '').split('/').filter(Boolean).pop() || null,
         description: b.description || '',
-        isPrivate: b.privacy === 'secret' || b.privacy === 'protected',
+        isPrivate: isSecret(b),
         parentId: null,
         system: false,
         owner: b.owner?.username || null,
@@ -251,18 +279,25 @@ async function pinterestExport(env = {}, kit = exportKit()) {
       schema: 'arena-import/1',
       source: 'pinterest',
       exportedAt: new Date().toISOString(),
-      user: { id: String(boards[0].owner?.id || ''), username, fullName: '' },
+      user: { id: String(boards[0]?.owner?.id || ''), username, fullName: '' },
       collections,
       library: null,
       elements,
     };
     const filename = `pinterest-export-${kit.safeName(username)}-${data.exportedAt.slice(0, 10)}.json`;
-    (env.save || kit.download)(data, filename);
-    ui.done(`Done: ${kit.count(boards.length, 'board')}, ${kit.count(Object.keys(elements).length, 'pin')}.`, filename, () =>
-      kit.download(data, filename)
-    );
+    const summary = `${kit.count(boards.length, 'board')}, ${kit.count(Object.keys(elements).length, 'pin')}`;
+    ui.status('Sending…', 1);
+    if (env.save) {
+      env.save(data, filename);
+      ui.done(`Done: ${summary}.`, filename);
+    } else if ((await (env.deliver || kit.deliver)(data, filename, env.toolOrigin)) === 'sent') {
+      ui.done(`Sent to To Are.na: ${summary}.`, 'You can close this tab and go back to To Are.na.');
+    } else {
+      ui.done(`Done: ${summary}.`, `Downloaded as ${filename}. Add it on the To Are.na page.`, () => kit.download(data, filename));
+    }
     return data;
   } catch (err) {
+    if (err.cancelled) return null;
     ui.error(err.message || String(err));
     if (env.ui) throw err;
   }

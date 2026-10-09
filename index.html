@@ -35,6 +35,7 @@
       <p class="vibe">
         <strong>Vibe-coded.</strong> This tool was built with an AI assistant. It works well and is tested, but it isn’t
         a polished product: try one small collection first.
+        <a href="demo/" id="demo-link">See the demo</a>
       </p>
 
       <div class="layout">
@@ -58,102 +59,56 @@
                 <span class="choice__desc">Boards and their sections, pins with their links and videos.</span>
               </button>
             </div>
-          </section>
-
-          <!-- Export -->
-          <section class="panel" data-step="export" aria-labelledby="h-export" hidden>
-            <h2 class="heading" id="h-export" tabindex="-1">
-              Export from <span data-only="cosmos">Cosmos</span><span data-only="pinterest">Pinterest</span>
-            </h2>
-
-            <div data-only="cosmos">
-              <ol class="numbered">
-                <li>
-                  Drag this button to your bookmarks bar.
-                  <span class="inline-action">
-                    <a class="btn bookmarklet" id="bookmarklet-cosmos" href="#" title="Drag me to your bookmarks bar">Export from Cosmos</a>
-                  </span>
-                </li>
-                <li>Open <a href="https://www.cosmos.so" target="_blank" rel="noopener noreferrer">cosmos.so</a>, signed in, and click the bookmark. A small panel shows the progress.</li>
-                <li>Add the file it downloads below.</li>
-              </ol>
-              <details class="more">
-                <summary>No bookmarks bar? Use the console</summary>
-                <p>
-                  On cosmos.so, open the console (<kbd>⌥⌘J</kbd> in Chrome, Edge and Arc, <kbd>⌥⌘C</kbd> in Safari,
-                  <kbd>⌥⌘K</kbd> in Firefox), paste the script and press Enter. Only paste code you trust into a console:
-                  this script comes from this page and only reads your account.
-                </p>
-                <button type="button" class="btn btn--sm" data-copy="cosmos">Copy the script</button>
-                <span class="hint" data-copied="cosmos" role="status"></span>
-              </details>
-            </div>
-
-            <div data-only="pinterest">
-              <p class="muted">Pinterest blocks bookmarks that run scripts, so this export runs from your browser’s console.</p>
-              <ol class="numbered">
-                <li>Open your profile on <a href="https://www.pinterest.com" target="_blank" rel="noopener noreferrer">pinterest.com</a>, signed in.</li>
-                <li>
-                  Copy the script, then open the console: <kbd>⌥⌘J</kbd> in Chrome, Edge and Arc, <kbd>⌥⌘C</kbd> in Safari,
-                  <kbd>⌥⌘K</kbd> in Firefox.
-                  <span class="inline-action">
-                    <button type="button" class="btn btn--sm" data-copy="pinterest">Copy the script</button>
-                    <span class="hint" data-copied="pinterest" role="status"></span>
-                  </span>
-                </li>
-                <li>Paste it and press Enter. Chrome may first ask you to type <code>allow pasting</code>.</li>
-                <li>Add the file it downloads below.</li>
-              </ol>
-              <p class="hint">
-                Only paste code you trust into a console. This script comes from this page: it reads your boards, writes
-                nothing on Pinterest, and saves the result on your computer.
-              </p>
-              <details class="more">
-                <summary>Safari or Firefox?</summary>
-                <p>
-                  Safari shows the console once “Show features for web developers” is on, in Settings › Advanced. Firefox
-                  lets bookmarks run on Pinterest: drag this one to your bookmarks bar instead.
-                </p>
-                <a class="btn btn--sm bookmarklet" id="bookmarklet-pinterest" href="#" title="Drag me to your bookmarks bar">Export from Pinterest</a>
-              </details>
-            </div>
-
-            <label class="drop" id="drop">
-              <input type="file" id="file" accept=".json,application/json" />
-              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg>
-              <span class="drop__title" id="drop-title">Add your export file</span>
-              <span class="drop__hint">Drop the .json file here, or click to choose it.</span>
-            </label>
-            <p class="error" id="load-error" role="alert" hidden></p>
-            <p class="note">
-              The script only reads your account, with the session already open in your browser. It changes nothing and
-              sends your data nowhere except the downloaded file.
+            <p class="note" id="desktop-note" hidden>
+              Picking needs a computer: Cosmos and Pinterest can’t run the export script on a phone or tablet.
             </p>
           </section>
 
-          <!-- Choose -->
-          <section class="panel" data-step="choose" aria-labelledby="h-choose" hidden>
-            <h2 class="heading" id="h-choose" tabindex="-1">Choose what to bring</h2>
-            <p class="meta" id="export-summary"></p>
-            <div class="toolbar">
-              <input type="search" id="filter" placeholder="Filter" aria-label="Filter" />
-              <button type="button" class="btn btn--sm" id="select-all">Select all</button>
-              <button type="button" class="btn btn--sm" id="select-none">Select none</button>
+          <!-- Pick -->
+          <section class="panel" data-step="pick" aria-labelledby="h-pick" hidden>
+            <h2 class="heading" id="h-pick" tabindex="-1">Pick from <span class="source-name"></span></h2>
+
+            <div id="pick-howto">
+              <ol class="numbered" id="howto"></ol>
+              <p class="waiting" id="pick-waiting" role="status" hidden></p>
+              <p class="hint" id="howto-trust"></p>
+              <p class="switch"><button type="button" class="link" id="method-switch"></button></p>
+              <details class="more">
+                <summary>Got a file instead?</summary>
+                <label class="drop" id="drop">
+                  <input type="file" id="file" accept=".json,application/json" />
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg>
+                  <span class="drop__title" id="drop-title">Add your export file</span>
+                  <span class="drop__hint">Drop the .json file here, or click to choose it.</span>
+                </label>
+              </details>
+              <p class="error" id="load-error" role="alert" hidden></p>
             </div>
-            <ul class="list" id="collections"></ul>
-            <label class="row row--library" id="library-row" hidden>
-              <input type="checkbox" id="include-library" />
-              <span class="thumb thumb--library" aria-hidden="true"></span>
-              <span class="row__text">
-                <span class="row__name">Whole library</span>
-                <span class="row__meta" id="library-meta"></span>
-              </span>
-            </label>
-            <div class="next">
-              <span class="meta" id="choose-count"></span>
-              <button type="button" class="btn" data-next="connect">
-                Continue <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
-              </button>
+
+            <div id="pick-received" hidden>
+              <p class="received" id="received-title"></p>
+              <p class="meta" id="export-summary"></p>
+              <div class="toolbar" id="collections-toolbar">
+                <input type="search" id="filter" placeholder="Filter" aria-label="Filter" />
+                <button type="button" class="btn btn--sm" id="select-all">Select all</button>
+                <button type="button" class="btn btn--sm" id="select-none">Select none</button>
+              </div>
+              <ul class="list" id="collections"></ul>
+              <label class="row row--library" id="library-row" hidden>
+                <input type="checkbox" id="include-library" />
+                <span class="thumb thumb--library" aria-hidden="true"></span>
+                <span class="row__text">
+                  <span class="row__name">Whole library</span>
+                  <span class="row__meta" id="library-meta"></span>
+                </span>
+              </label>
+              <div class="next">
+                <span class="meta" id="choose-count"></span>
+                <button type="button" class="btn" data-next="connect">
+                  Continue <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+                </button>
+              </div>
+              <p class="aside"><button type="button" class="link" id="pick-again">Pick something else</button></p>
             </div>
           </section>
 
@@ -161,19 +116,30 @@
           <section class="panel" data-step="connect" aria-labelledby="h-connect" hidden>
             <h2 class="heading" id="h-connect" tabindex="-1">Connect Are.na</h2>
             <div id="connect-form">
-              <p>
-                Create a
-                <a href="https://www.are.na/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">personal access token</a>
-                with <strong>write</strong> access, then paste it here.
-              </p>
-              <form class="token-row" id="token-form" autocomplete="off">
-                <input type="password" id="token" placeholder="Personal access token" aria-label="Are.na personal access token" spellcheck="false" />
-                <button type="submit" class="btn" id="connect">Connect</button>
-              </form>
-              <label class="check"><input type="checkbox" id="remember" /> Remember it on this computer</label>
+              <div id="oauth-block" hidden>
+                <p>Let this page create channels and blocks on your Are.na account. You can revoke it anytime in Are.na’s settings.</p>
+                <button type="button" class="btn btn--primary" id="oauth-connect">
+                  Connect with Are.na <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+                </button>
+              </div>
+              <div id="token-block">
+                <p>
+                  Create a
+                  <a href="https://www.are.na/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">personal access token</a>
+                  with <strong>read and write</strong> access, then paste it here.
+                </p>
+                <form class="token-row" id="token-form" autocomplete="off">
+                  <input type="password" id="token" placeholder="Personal access token" aria-label="Are.na personal access token" spellcheck="false" />
+                  <button type="submit" class="btn" id="connect">Connect</button>
+                </form>
+              </div>
+              <details class="more" id="token-alt" hidden>
+                <summary>Use a personal access token instead</summary>
+              </details>
+              <label class="check"><input type="checkbox" id="remember" /> Remember the connection on this computer</label>
               <p class="hint">
-                Unticked, it is forgotten when you close the tab. Ticked, it stays in this browser, where other local pages
-                could read it: avoid on a shared computer, and revoke it on Are.na once you are done.
+                Unticked, it is forgotten when you close the tab. Ticked, it stays in this browser, where other pages from
+                the same address could read it: avoid on a shared computer.
               </p>
               <p class="error" id="token-error" role="alert" hidden></p>
             </div>
@@ -223,7 +189,7 @@
             </div>
 
             <div class="next">
-              <span></span>
+              <span class="meta" id="connect-estimate"></span>
               <button type="button" class="btn" id="connect-next">
                 Continue <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
               </button>
@@ -262,14 +228,13 @@
               </details>
             </section>
           </section>
-
         </div>
       </div>
     </main>
 
     <footer class="footer">
       <p>
-        Runs in your browser. Your Are.na token is only sent to <code>api.are.na</code>. Not affiliated with Are.na, Cosmos
+        Runs in your browser. Your Are.na access is only sent to <code>api.are.na</code>. Not affiliated with Are.na, Cosmos
         or Pinterest.
         <a href="https://github.com/TanguyCaruel/to-arena" target="_blank" rel="noopener noreferrer">Source and download on GitHub</a>.
       </p>

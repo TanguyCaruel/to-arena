@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The demo calls no outside service at all: everything it shows is simulated in this page. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Demo · To Are.na</title>
+    <meta name="description" content="Try To Are.na with simulated Pinterest, Cosmos and Are.na accounts." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23fff'/%3E%3Cpath d='M6 16h17M17 9l7 7-7 7' fill='none' stroke='%23333' stroke-width='2.5' stroke-linecap='square'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="demo.css" />
+  </head>
+  <body class="is-demo">
+    <div class="demo-banner" role="note">
+      <p>
+        <strong>Demo.</strong> Everything here is simulated: the Pinterest and Cosmos pages, the boards and Are.na. Nothing
+        is read from or written to a real account.
+      </p>
+      <a class="btn btn--sm" href="../">Use the real tool</a>
+    </div>
+    <div id="app"><p class="demo-loading">Loading the demo…</p></div>
+    <script src="boot.js"></script>
+  </body>
+</html>

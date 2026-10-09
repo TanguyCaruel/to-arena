@@ -208,6 +208,11 @@ kbd {
   color: var(--ink);
 }
 
+.vibe a {
+  margin-left: var(--space-1);
+  color: var(--ink);
+}
+
 .layout {
   display: grid;
   grid-template-columns: 220px minmax(0, 640px);
@@ -342,6 +347,39 @@ kbd {
 .error::before {
   content: 'Error · ';
   font-weight: 700;
+}
+
+.waiting {
+  margin: var(--space-6) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-subtle);
+  font: 400 15px/20px var(--font-sans);
+}
+
+.received {
+  margin: 0 0 var(--space-1);
+  font-weight: 700;
+}
+
+.switch,
+.aside {
+  margin: var(--space-4) 0 0;
+  font: 400 15px/20px var(--font-sans);
+}
+
+.hint.block {
+  display: block;
+  margin-top: var(--space-1);
+}
+
+#howto-trust {
+  margin-top: var(--space-4);
+  max-width: 36em;
+}
+
+.btn--sm .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .note-box {

@@ -11,6 +11,11 @@ captions and sources, in the same order.
 
 Not affiliated with Are.na, Cosmos or Pinterest.
 
+## Try the demo
+
+**[tanguycaruel.github.io/to-arena/demo](https://tanguycaruel.github.io/to-arena/demo/)** walks through the whole tool
+with a simulated Pinterest, Cosmos and Are.na: no account needed, nothing real is read or written.
+
 ## Open it
 
 There is nothing to install. Pick one:
@@ -18,7 +23,7 @@ There is nothing to install. Pick one:
 ### Online, the simplest
 
 Open **[tanguycaruel.github.io/to-arena](https://tanguycaruel.github.io/to-arena/)** in Chrome, Safari, Firefox, Edge
-or Arc. Everything runs in your browser: your saves and your Are.na token never go through another server.
+or Arc. Everything runs in your browser: your saves and your Are.na access never go through another server.
 
 ### On your computer, Mac or Windows
 
@@ -27,22 +32,24 @@ or Arc. Everything runs in your browser: your saves and your Are.na token never 
 3. Open the **To Are.na** folder and double-click **index.html**. It opens in your web browser.
 
 If the page says it isn’t running, open `index.html` with Chrome, Edge or Firefox instead (right-click › Open With).
+The downloaded version can’t send your boards back by itself: the script downloads a file, which you add to the page.
 
 ## Use it
 
-You need an Are.na account, and your Cosmos or Pinterest account open in the same browser.
+You need an Are.na account, a computer, and your Cosmos or Pinterest account open in the same browser.
 
 1. **Source.** Pick Cosmos or Pinterest.
-2. **Export.** Follow the two or three steps on screen. A small script reads your collections on the site, with the
-   session already open in your browser, and downloads a `.json` file. Drop that file into the page.
-   - Cosmos: drag the **Export from Cosmos** button to your bookmarks bar, then click it on cosmos.so.
-   - Pinterest: copy the script, open your Pinterest profile, open the browser console and paste it. Pinterest blocks
-     bookmark buttons, except in Firefox.
-3. **Choose** the collections or boards to bring.
-4. **Connect.** Create an [Are.na personal access token](https://www.are.na/settings/personal-access-tokens) with
-   **read and write** access, paste it, then pick the channel privacy and how to handle carousels. The page checks
-   that the token can write before going further.
-5. **Transfer.** Read the summary, **Simulate first** if you like, then **Transfer**. You can pause and resume.
+2. **Pick.** Press **Open Pinterest** (or **Open Cosmos**) on the page, then run the small script on the site:
+   - Cosmos: drag the **Send to Are.na** button to your bookmarks bar once, then click it on cosmos.so.
+   - Pinterest: copy the script, open the browser console and paste it. The page shows the right keys for your
+     browser. Pinterest blocks bookmark buttons, except in Firefox.
+
+   On a board or a collection, the script sends just that one, with its sections or sub-collections. On your
+   profile, it lists them and you tick the ones you want. They come back to the To Are.na tab by themselves.
+3. **Connect.** Press **Connect with Are.na** and allow access, or paste an
+   [Are.na personal access token](https://www.are.na/settings/personal-access-tokens) with **read and write** access.
+   The page checks that it can write, then you pick the channel privacy and how to handle carousels.
+4. **Transfer.** Read the summary, **Simulate first** if you like, then **Transfer**. You can pause and resume.
 
 ## What goes where
 
@@ -83,14 +90,17 @@ the latest additions first.
 
 ## Security
 
-- **Your Are.na token** is only sent to `api.are.na`; the page’s Content Security Policy blocks any other
-  destination. By default it is forgotten when you close the tab. “Remember it on this computer” keeps it in the
-  browser’s storage, which other pages from the same address could read (other local files, or other pages under
-  `tanguycaruel.github.io`): avoid it on a shared computer, and revoke the token on Are.na when you are done. The
-  token check on **Connect** changes nothing on your account.
+- **Your Are.na access** (the token, or the access given by **Connect with Are.na**) is only sent to `api.are.na`;
+  the page’s Content Security Policy blocks any other destination. By default it is forgotten when you close the tab.
+  “Remember the connection on this computer” keeps it in the browser’s storage, which other pages from the same
+  address could read (other local files, or other pages under `tanguycaruel.github.io`): avoid it on a shared
+  computer, and revoke the access on Are.na when you are done. The write check on **Connect** changes nothing.
+- **Connect with Are.na** uses OAuth with PKCE: no secret in the page, a one-time code that only this tab can
+  exchange, and a state value checked on return.
 - **The export scripts** only read: Cosmos GraphQL queries and Pinterest `GET` requests, made with your open
-  session. No password is involved, nothing is written on Cosmos or Pinterest, and the result only goes to the
-  downloaded file. Paste into a console only code you trust: these scripts come from the page itself.
+  session. No password is involved and nothing is written on Cosmos or Pinterest. The result goes only to the To
+  Are.na tab that opened the site, after a handshake that checks its exact address; otherwise it is downloaded.
+  Paste into a console only code you trust: these scripts come from the page itself.
 - **Export files are treated as untrusted.** Text is shown as text, never as HTML. Only `http(s)` links are kept,
   media must be `https`, and thumbnails and uploads only come from the Cosmos and Pinterest image hosts.
 - **The page** loads nothing from outside its own folder: no CDN, no tracker, no external font.
@@ -104,15 +114,24 @@ No build step and no dependency: plain HTML, CSS and JavaScript.
 | `index.html`, `styles.css`, `app.js` | The page |
 | `arena.js` | The engine: export files, Are.na API client, transfer plan, resume, rate limits |
 | `cosmos-export.js`, `pinterest-export.js` | The export scripts; the page builds the bookmark and console scripts from them |
-| `export-kit.js` | Shared pieces of the export scripts: progress panel, download |
-| `tests/import.test.mjs` | Engine tests against a fake Are.na API |
+| `export-kit.js` | Shared pieces of the export scripts: panel and picker, sending to the tool, download |
+| `oauth.html`, `oauth.js` | Return page of **Connect with Are.na** |
+| `demo/` | The demo: the real page with simulated sites and Are.na (`mock-sources.js`) |
+| `tests/` | Engine and export-script tests against the simulations |
 
 ```bash
 node tests/import.test.mjs
+node tests/export.test.mjs
 ```
 
-To publish a new version of the download, zip the files above (without `tests/`) in a folder named `To Are.na`,
-then attach `To-Arena.zip` to a new [release](https://github.com/TanguyCaruel/to-arena/releases).
+**Connect with Are.na** needs an Are.na OAuth application: create one at
+[are.na/developers/oauth/applications](https://www.are.na/developers/oauth/applications) with the redirect address
+`https://tanguycaruel.github.io/to-arena/oauth.html`, then put its client ID in `OAUTH_CLIENT_ID` at the top of
+`app.js`. Without it, the page asks for a personal access token instead.
+
+To publish a new version of the download, zip the page files (without `tests/` and `demo/`) in a folder named
+`To Are.na`, then attach `To-Arena.zip` to a new [release](https://github.com/TanguyCaruel/to-arena/releases). Bump
+`VERSION` in `demo/boot.js` so the demo loads the new scripts.
 
 ## License
 

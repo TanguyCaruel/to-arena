@@ -1,15 +1,23 @@
 /*
  * To Are.na · Cosmos exporter
  *
- * Runs on https://www.cosmos.so while you are signed in (bookmarklet or browser console).
- * Read-only: nothing changes on Cosmos. It reads your collections (private ones too), their
- * sub-collections and every item in them, then downloads a JSON file for the import page.
+ * Runs on https://www.cosmos.so (bookmarklet or browser console). Read-only: nothing changes on
+ * Cosmos.
+ *   - On a collection's page, it takes that collection with its sub-collections (signed in or,
+ *     for a public collection, not).
+ *   - Anywhere else, it lists your collections (signed in) and lets you pick.
+ * Then it hands the items to the To Are.na tab that opened Cosmos, or downloads a JSON file.
  *
- * `env` lets it run outside a browser (tests, Node): { anonymous, me, clusters, includeLibrary, ui, save }.
+ * `env` lets it run elsewhere (tests, demo): { anonymous, path, me, fetch, toolOrigin, ui, mount,
+ * deliver, save }.
  */
 async function cosmosExport(env = {}, kit = exportKit()) {
   const API = 'https://api.cosmos.so/graphql';
   const PAGE_SIZE = 500;
+  const PATH = env.path ?? (typeof location !== 'undefined' ? location.pathname : '/');
+  /* Site pages that are not a user, and profile pages that are not a collection. */
+  const NOT_USER = new Set('e,search,settings,explore,home,login,signup,brand,api,about,discover,shop,messages,notifications,organize,pricing,legal'.split(','));
+  const NOT_COLLECTION = new Set('collections,elements,followers,following,likes,organize,search'.split(','));
 
   const MEDIA = `fragment M on Media {
     __typename mediaId url width height
@@ -37,6 +45,13 @@ async function cosmosExport(env = {}, kit = exportKit()) {
         meta { nextPageCursor count }
       }
     } ${CLUSTER}`,
+    ClusterBySlug: `query ClusterBySlug($input: ClusterGetInput!, $sub: String, $withSub: Boolean!) {
+      cluster(input: $input) {
+        ...C
+        subClusters { items { ...C } }
+        subCluster(slug: $sub) @include(if: $withSub) { ...C }
+      }
+    } ${CLUSTER}`,
     ClusterElements: `query ClusterElements($clusterId: ClusterId, $pageCursor: String, $pageSize: Int) {
       clusterConnections(clusterId: $clusterId, meta: { pageSize: $pageSize, pageCursor: $pageCursor }) {
         items { element { ...E } }
@@ -55,13 +70,14 @@ async function cosmosExport(env = {}, kit = exportKit()) {
   };
 
   const { sleep } = kit;
-  const ui = env.ui || kit.createOverlay('Cosmos → Are.na · export');
+  const doFetch = env.fetch || ((...args) => fetch(...args));
+  const ui = env.ui || kit.createOverlay('Cosmos → Are.na', { mount: env.mount });
   let token = null;
 
   /* The site's own session endpoint hands out a short-lived access token: no password involved. */
   async function refreshToken() {
     try {
-      const res = await fetch('/api/refresh-token', {
+      const res = await doFetch('/api/refresh-token', {
         credentials: 'include',
         headers: { 'x-cosmos-refresh-trigger': 'to-arena-export' },
       });
@@ -75,7 +91,7 @@ async function cosmosExport(env = {}, kit = exportKit()) {
   async function gql(name, variables = {}, attempt = 0) {
     let res, body;
     try {
-      res = await fetch(`${API}?q=${name}`, {
+      res = await doFetch(`${API}?q=${name}`, {
         method: 'POST',
         credentials: env.anonymous ? 'omit' : 'include',
         headers: {
@@ -193,22 +209,45 @@ async function cosmosExport(env = {}, kit = exportKit()) {
     };
   }
 
+  /* /user/collection or /user/collection/sub-collection: the collection on screen, if any. */
+  async function collectionOnPage() {
+    const parts = PATH.split('/').filter(Boolean).map((p) => decodeURIComponent(p));
+    if (parts.length < 2 || NOT_USER.has(parts[0].toLowerCase()) || NOT_COLLECTION.has(parts[1].toLowerCase())) return null;
+    const sub = parts[2] && !NOT_COLLECTION.has(parts[2].toLowerCase()) ? parts[2] : null;
+    try {
+      const { cluster } = await gql('ClusterBySlug', { input: { slug: parts[1], ownerUsername: parts[0] }, sub, withSub: !!sub });
+      if (!cluster) return null;
+      if (sub && cluster.subCluster) return { owner: parts[0], clusters: [normCluster(cluster.subCluster, String(cluster.id))] };
+      return {
+        owner: parts[0],
+        clusters: [normCluster(cluster), ...(cluster.subClusters?.items || []).map((s) => normCluster(s, String(cluster.id)))],
+      };
+    } catch (err) {
+      if (err.code === 'NOT_FOUND' || err.code === 'FORBIDDEN') return null;
+      throw err;
+    }
+  }
+
   try {
     ui.status('Connecting to Cosmos…');
     if (!env.anonymous) {
       if (!/(^|\.)cosmos\.so$/.test(location.hostname)) {
-        throw new Error('Open https://www.cosmos.so (signed in), then run the export again from that tab.');
+        throw new Error('Open https://www.cosmos.so, then run the export again from that tab.');
       }
       token = await refreshToken();
     }
-    const me = env.me || (await gql('Me')).me;
-    if (!me) throw Object.assign(new Error('Not signed in.'), { code: 'AUTHENTICATION' });
 
-    ui.status('Reading your collections…');
-    let clusters;
-    if (env.clusters) {
-      clusters = env.clusters.map((c) => normCluster(c));
+    let me = env.me || null;
+    let clusters = null;
+    let includeLibrary = false;
+    const onPage = await collectionOnPage();
+    if (onPage) {
+      clusters = onPage.clusters;
+      me = me || { id: '', username: onPage.owner, fullName: '' };
     } else {
+      if (!me) me = token || env.anonymous ? (await gql('Me').catch(() => ({ me: null }))).me : null;
+      if (!me) throw Object.assign(new Error('Not signed in.'), { code: 'AUTHENTICATION' });
+      ui.status('Reading your collections…');
       const top = await paginate('UserClusters', { userId: me.id }, (d) => d.userClusters);
       const byId = new Map();
       for (const c of top) {
@@ -217,7 +256,28 @@ async function cosmosExport(env = {}, kit = exportKit()) {
           if (!byId.has(String(s.id))) byId.set(String(s.id), normCluster(s, String(c.id)));
         }
       }
-      clusters = [...byId.values()];
+      const all = [...byId.values()];
+      if (!all.length) throw new Error('No collections found on this account.');
+      const names = new Map(all.map((c) => [c.id, c.name]));
+      const picked = await ui.pick({
+        heading: 'Pick the collections to send',
+        noun: 'collection',
+        items: all.map((c) => ({
+          id: c.id,
+          name: c.name,
+          child: !!c.parentId,
+          meta: [
+            kit.count(c.expectedCount || 0, 'item'),
+            c.isPrivate ? 'private' : '',
+            c.parentId && names.has(c.parentId) ? `in ${names.get(c.parentId)}` : '',
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        })),
+        extra: { label: 'Also send the whole library, every item even unsorted', checked: false },
+      });
+      clusters = all.filter((c) => picked.ids.includes(c.id));
+      includeLibrary = picked.extra;
     }
 
     const elements = {};
@@ -235,7 +295,7 @@ async function cosmosExport(env = {}, kit = exportKit()) {
     const total = clusters.reduce((n, c) => n + (c.expectedCount || 0), 0);
     let done = 0;
     for (const [i, c] of clusters.entries()) {
-      const label = `Collection ${i + 1} of ${clusters.length} · ${c.name}`;
+      const label = clusters.length > 1 ? `Collection ${i + 1} of ${clusters.length} · ${c.name}` : c.name;
       const items = await paginate(
         'ClusterElements',
         { clusterId: Number(c.id), pageSize: PAGE_SIZE },
@@ -247,7 +307,7 @@ async function cosmosExport(env = {}, kit = exportKit()) {
     }
 
     let library = null;
-    if (env.includeLibrary !== false) {
+    if (includeLibrary) {
       const items = await paginate(
         'LibraryElements',
         { userId: me.id, pageSize: PAGE_SIZE },
@@ -272,21 +332,28 @@ async function cosmosExport(env = {}, kit = exportKit()) {
       schema: 'arena-import/1',
       source: 'cosmos',
       exportedAt: new Date().toISOString(),
-      user: { id: String(me.id), username: me.username, fullName: me.fullName || '' },
+      user: { id: String(me.id || ''), username: me.username, fullName: me.fullName || '' },
       collections: clusters,
       library,
       elements,
     };
     const filename = `cosmos-export-${kit.safeName(me.username)}-${data.exportedAt.slice(0, 10)}.json`;
-    (env.save || kit.download)(data, filename);
-    ui.done(`Done: ${kit.count(clusters.length, 'collection')}, ${kit.count(Object.keys(elements).length, 'item')}.`, filename, () =>
-      kit.download(data, filename)
-    );
+    const summary = `${kit.count(clusters.length, 'collection')}, ${kit.count(Object.keys(elements).length, 'item')}`;
+    ui.status('Sending…', 1);
+    if (env.save) {
+      env.save(data, filename);
+      ui.done(`Done: ${summary}.`, filename);
+    } else if ((await (env.deliver || kit.deliver)(data, filename, env.toolOrigin)) === 'sent') {
+      ui.done(`Sent to To Are.na: ${summary}.`, 'You can close this tab and go back to To Are.na.');
+    } else {
+      ui.done(`Done: ${summary}.`, `Downloaded as ${filename}. Add it on the To Are.na page.`, () => kit.download(data, filename));
+    }
     return data;
   } catch (err) {
+    if (err.cancelled) return null;
     ui.error(
       err.code === 'AUTHENTICATION'
-        ? 'You are not signed in to Cosmos in this browser. Sign in on cosmos.so, then run the export again.'
+        ? 'Sign in to Cosmos in this browser, or open one of your collections, then run the export again.'
         : err.message || String(err)
     );
     if (env.ui) throw err;

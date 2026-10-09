@@ -16,7 +16,21 @@
     runImport,
   } = window.ToArena;
 
+  /* Set by demo/demo.js: simulated sites and Are.na, so the whole flow can be tried without accounts. */
+  const demo = window.TO_ARENA_DEMO || null;
+
+  /*
+   * Are.na OAuth application of the online version (a public client: PKCE, no secret). Its redirect
+   * address is oauth.html next to this page. Empty: “Connect with Are.na” stays hidden and a
+   * personal access token is used instead.
+   */
+  const OAUTH_CLIENT_ID = '';
+  const OAUTH_AUTHORIZE = 'https://www.are.na/oauth/authorize';
+  const OAUTH_TOKEN = 'https://api.are.na/v3/oauth/token';
+  const oauthAvailable = () => !!demo || (!!OAUTH_CLIENT_ID && location.protocol === 'https:');
+
   const $ = (id) => document.getElementById(id);
+  const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
   const nf = new Intl.NumberFormat('en-US');
   const n = (x) => nf.format(x);
   const plural = (count, one, many) => `${n(count)} ${count === 1 ? one : many}`;
@@ -26,11 +40,27 @@
   /* Same key as the first versions, so their history keeps preventing duplicates. */
   const journalKey = (userId) => `cosmos-to-arena:journal:${userId}`;
 
-  const WORDS = {
-    cosmos: { collection: ['collection', 'collections'], item: ['item', 'items'], nest: 'Put sub-collections inside their parent channel' },
-    pinterest: { collection: ['board', 'boards'], item: ['pin', 'pins'], nest: 'Put each section inside its board’s channel' },
+  const SITES = {
+    cosmos: { url: 'https://www.cosmos.so/', collection: ['collection', 'collections'], sub: ['sub-collection', 'sub-collections'], item: ['item', 'items'], nest: 'Put sub-collections inside their parent channel' },
+    pinterest: { url: 'https://www.pinterest.com/', collection: ['board', 'boards'], sub: ['section', 'sections'], item: ['pin', 'pins'], nest: 'Put each section inside its board’s channel' },
   };
-  const words = () => WORDS[state.source] || WORDS.cosmos;
+  const site = () => SITES[state.source] || SITES.cosmos;
+  /* “2 boards and 1 section”: sub-collections are named apart from the collections that hold them. */
+  function describe(collections) {
+    const s = site();
+    const subs = collections.filter((c) => c.parentId && state.data?.collections.some((p) => p.id === c.parentId)).length;
+    const tops = collections.length - subs;
+    return [tops ? plural(tops, ...s.collection) : '', subs ? plural(subs, ...s.sub) : ''].filter(Boolean).join(' and ');
+  }
+  /* Where an export may come from when it is sent straight to this page. */
+  const SOURCE_ORIGIN = /^https:\/\/((www\.)?cosmos\.so|([a-z]{2,3}\.)?pinterest\.(com|[a-z]{2})(\.[a-z]{2})?)$/;
+
+  /* Which keys open the console, for the instructions. */
+  const ua = navigator.userAgent;
+  const isMac = /Macintosh|Mac OS X/.test(ua) && !/iPhone|iPad/.test(ua);
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'your browser';
+  const consoleKeys = browser === 'Firefox' ? (isMac ? '⌥⌘K' : 'Ctrl+Shift+K') : browser === 'Safari' ? '⌥⌘C' : isMac ? '⌥⌘J' : 'Ctrl+Shift+J';
+  const barKeys = isMac ? '⇧⌘B' : 'Ctrl+Shift+B';
 
   const store = {
     get(area, key) {
@@ -59,6 +89,9 @@
   const state = {
     step: 'source',
     source: null,
+    method: null,
+    waiting: false,
+    showHowto: false,
     data: null,
     filename: '',
     selected: new Set(),
@@ -76,8 +109,7 @@
 
   const FLOW = [
     { id: 'source', label: 'Source', desc: 'Pick where your saves live.' },
-    { id: 'export', label: 'Export', desc: 'Download your saves as a file, then add it here.' },
-    { id: 'choose', label: 'Choose', desc: 'Select what to bring to Are.na.' },
+    { id: 'pick', label: 'Pick', desc: 'Choose boards or collections on the site; they come back here.' },
     { id: 'connect', label: 'Connect', desc: 'Link your Are.na account and pick a few settings.' },
     { id: 'transfer', label: 'Transfer', desc: 'Review, simulate if you like, then create the channels.' },
   ];
@@ -86,10 +118,8 @@
     switch (id) {
       case 'source':
         return true;
-      case 'export':
+      case 'pick':
         return !!state.source;
-      case 'choose':
-        return !!state.data;
       case 'connect':
         return !!state.data;
       case 'transfer':
@@ -110,35 +140,28 @@
   }
 
   function render() {
-    const flow = FLOW;
-    const index = flow.findIndex((s) => s.id === state.step);
+    const index = FLOW.findIndex((s) => s.id === state.step);
 
     const crumb = $('crumb');
     crumb.replaceChildren();
-    const current = state.source ? SOURCES[state.source].label : null;
-    if (current) {
-      const home = Object.assign(document.createElement('button'), { type: 'button', textContent: 'To Are.na' });
+    if (state.source) {
+      const home = el('button', { type: 'button', textContent: 'To Are.na' });
       home.addEventListener('click', goHome);
-      crumb.append(
-        home,
-        Object.assign(document.createElement('span'), { className: 'crumb__sep', textContent: '/' }),
-        Object.assign(document.createElement('span'), { className: 'crumb__current', textContent: current })
-      );
+      crumb.append(home, el('span', { className: 'crumb__sep', textContent: '/' }), el('span', { className: 'crumb__current', textContent: SOURCES[state.source].label }));
     } else {
-      crumb.append(Object.assign(document.createElement('span'), { className: 'crumb__current', textContent: 'To Are.na' }));
+      crumb.append(el('span', { className: 'crumb__current', textContent: 'To Are.na' }));
     }
 
     const steps = $('steps');
     steps.replaceChildren();
-    for (const step of flow) {
+    for (const step of FLOW) {
       const li = document.createElement('li');
-      const isCurrent = step.id === state.step;
-      if (isCurrent) {
+      if (step.id === state.step) {
         li.setAttribute('aria-current', 'step');
-        li.append(step.label, Object.assign(document.createElement('span'), { className: 'steps__desc', textContent: step.desc }));
+        li.append(step.label, el('span', { className: 'steps__desc', textContent: step.desc }));
       } else if (reachable(step.id)) {
         li.className = 'is-reachable';
-        const button = Object.assign(document.createElement('button'), { type: 'button', textContent: step.label });
+        const button = el('button', { type: 'button', textContent: step.label });
         button.addEventListener('click', () => go(step.id));
         li.appendChild(button);
       } else {
@@ -147,23 +170,22 @@
       steps.appendChild(li);
     }
     const count = $('step-count');
-    count.replaceChildren(`Step ${index + 1} of ${flow.length} · ${flow[index]?.label || ''}`);
-    const previous = flow[index - 1];
+    count.replaceChildren(`Step ${index + 1} of ${FLOW.length} · ${FLOW[index]?.label || ''}`);
+    const previous = FLOW[index - 1];
     if (previous && reachable(previous.id)) {
-      const back = Object.assign(document.createElement('button'), { type: 'button', className: 'link', textContent: `Back to ${previous.label}` });
+      const back = el('button', { type: 'button', className: 'link', textContent: `Back to ${previous.label}` });
       back.addEventListener('click', () => go(previous.id));
       count.append(' · ', back);
     }
 
     for (const panel of document.querySelectorAll('.panel')) panel.hidden = panel.dataset.step !== state.step;
-    for (const el of document.querySelectorAll('[data-only]')) el.hidden = el.dataset.only !== state.source;
-    for (const choice of document.querySelectorAll('.choice')) {
-      choice.setAttribute('aria-pressed', String(choice.dataset.source === state.source));
-    }
-    $('nest-label').textContent = words().nest;
+    for (const node of document.querySelectorAll('[data-only]')) node.hidden = node.dataset.only !== state.source;
+    for (const node of document.querySelectorAll('.source-name')) node.textContent = state.source ? SOURCES[state.source].label : '';
+    for (const choice of document.querySelectorAll('.choice')) choice.setAttribute('aria-pressed', String(choice.dataset.source === state.source));
+    $('nest-label').textContent = site().nest;
 
     if (!state.run) state.plan = state.data ? buildPlan(state.data, options()) : null;
-    updateChoose();
+    updatePick();
     updateConnect();
     updateTransfer();
   }
@@ -178,13 +200,15 @@
   for (const choice of document.querySelectorAll('.choice')) {
     choice.addEventListener('click', () => {
       const source = choice.dataset.source;
-      if (state.data && state.data.source !== source) {
+      if (state.source !== source) {
         state.data = null;
         state.selected = new Set();
+        state.waiting = false;
+        state.method = source === 'pinterest' && browser !== 'Firefox' ? 'console' : 'bookmark';
         resetDrop();
       }
       state.source = source;
-      go('export');
+      go('pick');
     });
   }
 
@@ -192,38 +216,155 @@
     button.addEventListener('click', () => go(button.dataset.next));
   }
 
-  /* ───────────── Export scripts ───────────── */
+  /* ───────────── Pick: the export script and the site ───────────── */
 
-  /* Each script carries the shared kit, so it runs on its own in the bookmark or the console. */
-  const scriptFor = (fn) => `(function () {\n${window.exportKit.toString()}\n(${fn.toString()})();\n})();`;
+  /*
+   * Each script carries the shared kit and this page's address, so it runs on its own in the
+   * bookmark or the console, and sends its result back here only.
+   */
   const EXPORTERS = { cosmos: window.cosmosExport, pinterest: window.pinterestExport };
+  const scriptFor = (source) =>
+    `(function () {\n${window.exportKit.toString()}\n(${EXPORTERS[source].toString()})(${JSON.stringify({ toolOrigin: location.origin })});\n})();`;
 
-  for (const [source, fn] of Object.entries(EXPORTERS)) {
-    const link = $(`bookmarklet-${source}`);
-    link.href = `javascript:${encodeURIComponent(scriptFor(fn))}`;
+  function openSite() {
+    state.waiting = true;
+    if (demo) demo.openSource(state.source, { receive });
+    else window.open(site().url, 'to-arena-source');
+    updatePick();
+  }
+
+  async function copyScript(button) {
+    const text = scriptFor(state.source);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const area = el('textarea', { value: text });
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      area.remove();
+    }
+    button.textContent = 'Copied';
+    setTimeout(() => (button.textContent = 'Copy the script'), 2500);
+  }
+
+  const kbd = (text) => el('kbd', { textContent: text });
+  const btn = (label, onClick, className = 'btn btn--sm') => {
+    const button = el('button', { type: 'button', className, textContent: label });
+    button.addEventListener('click', () => onClick(button));
+    return button;
+  };
+
+  function bookmarkletLink() {
+    const link = el('a', { className: 'btn btn--sm bookmarklet', href: `javascript:${encodeURIComponent(scriptFor(state.source))}`, textContent: 'Send to Are.na' });
+    link.title = 'Drag me to your bookmarks bar';
     link.addEventListener('click', (event) => {
       event.preventDefault();
-      link.title = 'Drag this button to your bookmarks bar, then click it on the site.';
-      const hint = document.querySelector(`[data-copied="${source}"]`);
-      if (hint) hint.textContent = 'Drag the button to your bookmarks bar, then click it on the site.';
+      link.textContent = 'Drag me to the bookmarks bar';
+      setTimeout(() => (link.textContent = 'Send to Are.na'), 2500);
     });
+    return link;
   }
 
-  for (const button of document.querySelectorAll('[data-copy]')) {
-    button.addEventListener('click', async () => {
-      const text = scriptFor(EXPORTERS[button.dataset.copy]);
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch {
-        const area = Object.assign(document.createElement('textarea'), { value: text });
-        document.body.appendChild(area);
-        area.select();
-        document.execCommand('copy');
-        area.remove();
-      }
-      document.querySelector(`[data-copied="${button.dataset.copy}"]`).textContent = 'Copied';
-    });
+  /* The steps on screen, for this source, this browser and this way of running the script. */
+  function renderHowto() {
+    const list = $('howto');
+    list.replaceChildren();
+    const s = site();
+    const name = SOURCES[state.source].label;
+    const where =
+      state.source === 'pinterest'
+        ? 'Go to the board you want, or to your profile to pick several.'
+        : 'Go to the collection you want, or anywhere else to pick several.';
+    const step = (...children) => {
+      const li = document.createElement('li');
+      li.append(...children);
+      list.appendChild(li);
+      return li;
+    };
+    const action = (...children) => {
+      const span = el('span', { className: 'inline-action' });
+      span.append(...children);
+      return span;
+    };
+    const open = btn(`Open ${name}`, openSite, 'btn btn--sm');
+    open.append(arrowIcon());
+
+    if (state.method === 'console') {
+      step('Copy the script.', action(btn('Copy the script', copyScript)));
+      step(`Open ${name}, signed in. ${where}`, action(open));
+      const keys = step('Open the console with ', kbd(consoleKeys), ', paste the script and press Enter.');
+      if (browser === 'Chrome' || browser === 'Edge') keys.append(' The first time, Chrome asks you to type ', el('code', { textContent: 'allow pasting' }), ' before.');
+      if (browser === 'Safari') keys.append(' In Safari, first turn on Settings › Advanced › Show features for web developers.');
+      step(`Tick the ${s.collection[1]} you want in the panel that appears, then send. They come back here by themselves.`);
+      $('howto-trust').textContent = `Only paste code you trust into a console. This script comes from this page: it reads your ${s.collection[1]}, writes nothing on ${name}, and sends them to this tab only.`;
+    } else {
+      const drag = step('Drag this button to your bookmarks bar, once.', action(bookmarkletLink()));
+      drag.append(el('span', { className: 'hint block', textContent: `Bookmarks bar hidden? Show it with ${barKeys}.` }));
+      step(`Open ${name}, signed in. ${where}`, action(open));
+      step(`Click the “Send to Are.na” bookmark, tick what you want, then send. It comes back here by itself.`);
+      $('howto-trust').textContent = `The bookmark only reads your ${s.collection[1]}, with the session already open in your browser, and sends them to this tab only.`;
+    }
+
+    const toggle = $('method-switch');
+    toggle.textContent = state.method === 'console' ? 'Use a bookmark instead' : 'No bookmarks bar? Use the console instead';
+    if (state.source === 'pinterest' && state.method === 'console') toggle.textContent = 'Using Firefox? Use a bookmark instead';
   }
+
+  $('method-switch').addEventListener('click', () => {
+    state.method = state.method === 'console' ? 'bookmark' : 'console';
+    renderHowto();
+  });
+
+  function arrowIcon() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'icon');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M4 12h15M13 6l6 6-6 6');
+    svg.appendChild(path);
+    return svg;
+  }
+
+  let howtoFor = '';
+
+  function updatePick() {
+    if (state.step !== 'pick' || !state.source) return;
+    const key = `${state.source}:${state.method}`;
+    if (howtoFor !== key) {
+      renderHowto();
+      howtoFor = key;
+    }
+    const received = !!state.data && !state.showHowto;
+    $('pick-howto').hidden = received;
+    $('pick-received').hidden = !received;
+    const waiting = $('pick-waiting');
+    waiting.hidden = !state.waiting || received;
+    waiting.textContent = `Waiting for your ${site().collection[1]}… Leave this tab open while you pick on ${SOURCES[state.source].label}.`;
+    if (!state.data) return;
+    const count = state.selected.size + ($('include-library').checked ? 1 : 0);
+    const stats = state.plan?.stats;
+    $('choose-count').textContent = count
+      ? `${describe(state.data.collections.filter((c) => state.selected.has(c.id)))} · about ${plural(stats?.connections || 0, 'block', 'blocks')}`
+      : 'Nothing selected';
+    document.querySelector('[data-next="connect"]').disabled = !count;
+  }
+
+  /* An export sent by the script from the site's tab: answer its handshake, then take the data. */
+  window.addEventListener('message', (e) => {
+    if (!SOURCE_ORIGIN.test(e.origin) || typeof e.data !== 'object' || !e.data) return;
+    if (e.data.type === 'to-arena/hello') {
+      e.source?.postMessage({ type: 'to-arena/ready' }, e.origin);
+    } else if (e.data.type === 'to-arena/export') {
+      try {
+        receive(e.data.data, e.data.filename);
+        window.focus();
+      } catch (err) {
+        showLoadError(err);
+      }
+    }
+  });
 
   /* ───────────── Export file ───────────── */
 
@@ -242,27 +383,37 @@
   });
 
   async function readFile(file) {
-    const error = $('load-error');
-    error.hidden = true;
+    $('load-error').hidden = true;
     try {
       if (file.size > 200 * 1024 * 1024) throw new Error('This file is too large to be an export.');
-      loadExport(JSON.parse(await file.text()), file.name);
+      receive(JSON.parse(await file.text()), file.name);
     } catch (err) {
-      error.textContent = err instanceof SyntaxError ? 'This file isn’t valid JSON.' : err.message;
-      error.hidden = false;
+      showLoadError(err);
     }
   }
 
-  function loadExport(raw, filename = 'export.json') {
+  function showLoadError(err) {
+    $('load-error').textContent = err instanceof SyntaxError ? 'This file isn’t valid JSON.' : err.message;
+    $('load-error').hidden = false;
+  }
+
+  /* Takes an export, from the site's tab, a file or the demo. */
+  function receive(raw, filename = 'export.json') {
     const data = normalizeExport(raw);
     state.data = data;
     state.filename = filename;
     state.source = data.source;
+    state.method = state.method || (data.source === 'pinterest' && browser !== 'Firefox' ? 'console' : 'bookmark');
+    state.waiting = false;
+    state.showHowto = false;
     state.selected = new Set(data.collections.filter((c) => !c.system).map((c) => c.id));
     $('drop-title').textContent = `✓ ${filename}`;
-    $('include-library').checked = false;
+    $('include-library').checked = !!data.library;
+    $('load-error').hidden = true;
     renderCollections();
-    go('choose');
+    document.title = `✓ Received · To Are.na`;
+    setTimeout(() => (document.title = 'To Are.na'), 4000);
+    go('pick');
   }
 
   function resetDrop() {
@@ -270,16 +421,19 @@
     $('file').value = '';
   }
 
-  /* ───────────── Choose ───────────── */
+  $('pick-again').addEventListener('click', () => {
+    state.showHowto = true;
+    updatePick();
+  });
+
+  /* ───────────── Received collections ───────────── */
 
   function renderCollections() {
-    const { collections, user, exportedAt, elements, library } = state.data;
-    const w = words();
-    const date = new Date(exportedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-    $('export-summary').textContent = `Export of @${user?.username || '?'} · ${date} · ${plural(collections.length, ...w.collection)} · ${plural(
-      Object.keys(elements).length,
-      ...w.item
-    )}`;
+    const { collections, user, elements, library } = state.data;
+    const s = site();
+    const names = collections.filter((c) => !c.parentId);
+    $('received-title').textContent = `Received ${describe(collections)}${names.length === 1 ? `: ${names[0].name}` : ''}.`;
+    $('export-summary').textContent = `From @${user?.username || '?'} · ${plural(Object.keys(elements).length, ...s.item)}. Untick what you don’t want.`;
 
     const ids = new Set(collections.map((c) => c.id));
     const children = new Map();
@@ -296,36 +450,27 @@
       for (const child of children.get(c.id) || []) list.appendChild(collectionRow(child, true, user));
     }
     $('filter').value = '';
+    $('collections-toolbar').hidden = collections.length < 7;
 
     $('library-row').hidden = !library;
-    if (library) {
-      $('library-meta').textContent = `${plural(library.elementIds.length, ...w.item)}, including those in no collection. Makes one more channel.`;
-    }
+    if (library) $('library-meta').textContent = `${plural(library.elementIds.length, ...s.item)}, including those in no collection. Makes one more channel.`;
   }
 
   function collectionRow(c, isChild, user) {
     const li = document.createElement('li');
     li.dataset.name = normalize(c.name);
-    const label = document.createElement('label');
-    label.className = `row${isChild ? ' row--child' : ''}`;
-
-    const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: state.selected.has(c.id) });
+    const label = el('label', { className: `row${isChild ? ' row--child' : ''}` });
+    const box = el('input', { type: 'checkbox', checked: state.selected.has(c.id) });
     box.dataset.id = c.id;
-
-    const thumb = Object.assign(document.createElement('img'), { className: 'thumb', alt: '', loading: 'lazy', referrerPolicy: 'no-referrer' });
+    const thumb = el('img', { className: 'thumb', alt: '', loading: 'lazy', referrerPolicy: 'no-referrer' });
     const src = thumbUrl(c.cover);
     if (src) thumb.src = src;
-
-    const text = Object.assign(document.createElement('span'), { className: 'row__text' });
-    const meta = [plural(c.elementIds.length, ...words().item)];
+    const text = el('span', { className: 'row__text' });
+    const meta = [plural(c.elementIds.length, ...site().item)];
     if (c.isPrivate) meta.push(state.source === 'pinterest' ? 'secret' : 'private');
     if (c.system) meta.push('public profile');
     if (c.owner && user?.username && c.owner !== user.username) meta.push(`with @${c.owner}`);
-    text.append(
-      Object.assign(document.createElement('span'), { className: 'row__name', textContent: c.name || 'Untitled' }),
-      Object.assign(document.createElement('span'), { className: 'row__meta', textContent: meta.join(' · ') })
-    );
-
+    text.append(el('span', { className: 'row__name', textContent: c.name || 'Untitled' }), el('span', { className: 'row__meta', textContent: meta.join(' · ') }));
     label.append(box, thumb, text);
     li.appendChild(label);
     return li;
@@ -333,6 +478,7 @@
 
   /* Only the sources' own image hosts: a doctored export file can't make the page call anywhere else. */
   function thumbUrl(url) {
+    if (demo) return demo.image(url);
     try {
       const u = new URL(url);
       if (u.protocol !== 'https:' || !/^(cdn\.cosmos\.so|i\.pinimg\.com)$/.test(u.hostname)) return null;
@@ -379,18 +525,26 @@
   $('select-none').addEventListener('click', () => setVisible(false));
   $('include-library').addEventListener('change', render);
 
-  function updateChoose() {
-    if (!state.data) return;
-    const count = state.selected.size + ($('include-library').checked ? 1 : 0);
-    $('choose-count').textContent = count ? `${plural(state.selected.size, ...words().collection)} selected` : 'Nothing selected yet';
-    document.querySelector('[data-next="connect"]').disabled = !count;
-  }
-
   /* ───────────── Connect ───────────── */
+
+  const makeClient = (token, opts = {}) => (demo ? demo.makeClient(token, opts) : new ArenaClient(token, opts));
 
   $('token-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    connect();
+    const token = $('token').value.trim();
+    if (token) connect(token, $('connect'));
+  });
+
+  $('oauth-connect').addEventListener('click', async () => {
+    const button = $('oauth-connect');
+    if (busy()) return;
+    $('token-error').hidden = true;
+    try {
+      const token = demo ? await demo.authorize() : await authorize();
+      if (token) await connect(token, button);
+    } catch (err) {
+      showTokenError(err);
+    }
   });
 
   $('remember').addEventListener('change', () => {
@@ -405,16 +559,23 @@
     store.remove('sessionStorage', LEGACY_TOKEN_KEY);
   }
 
+  function forgetToken() {
+    for (const area of ['localStorage', 'sessionStorage']) {
+      store.remove(area, TOKEN_KEY);
+      store.remove(area, LEGACY_TOKEN_KEY);
+    }
+  }
+
   /* Checks the token, then that it can write: a read-only token would fail at the first channel. */
-  async function connect() {
-    const token = $('token').value.trim();
-    if (!token || busy()) return;
-    const button = $('connect');
+  async function connect(token, button) {
+    if (busy()) return;
+    const label = button.firstChild?.nodeType === Node.TEXT_NODE ? button.firstChild : null;
+    const before = label?.textContent;
     button.disabled = true;
-    button.textContent = 'Checking…';
+    if (label) label.textContent = 'Checking… ';
     $('token-error').hidden = true;
     try {
-      const client = new ArenaClient(token);
+      const client = makeClient(token);
       const me = await client.request('GET', '/me');
       if (!(await checkWriteAccess(client))) throw Object.assign(new Error('This token is read-only'), { readOnly: true });
       state.me = me;
@@ -429,7 +590,7 @@
       showTokenError(err);
     } finally {
       button.disabled = false;
-      button.textContent = 'Connect';
+      if (label) label.textContent = before;
       render();
     }
   }
@@ -437,7 +598,7 @@
   function showTokenError(err) {
     const box = $('token-error');
     if (err.readOnly) {
-      const link = Object.assign(document.createElement('a'), {
+      const link = el('a', {
         href: 'https://www.are.na/settings/personal-access-tokens',
         target: '_blank',
         rel: 'noopener noreferrer',
@@ -445,19 +606,71 @@
       });
       box.replaceChildren('This token can only read, so it can’t create channels. ', link, ', then paste it here.');
       $('token').value = '';
-      $('token').focus();
+      if ($('token').offsetParent) $('token').focus();
+    } else if (err.cancelled) {
+      return;
     } else {
-      box.textContent =
-        err.status === 401 ? 'Are.na refused this token. Check that it is complete, or create a new one.' : `Can’t connect: ${err.message}`;
+      box.textContent = err.status === 401 ? 'Are.na refused this token. Check that it is complete, or create a new one.' : `Can’t connect: ${err.message}`;
     }
     box.hidden = false;
   }
 
-  function forgetToken() {
-    for (const area of ['localStorage', 'sessionStorage']) {
-      store.remove(area, TOKEN_KEY);
-      store.remove(area, LEGACY_TOKEN_KEY);
-    }
+  /* ── “Connect with Are.na”: OAuth in a popup, with PKCE ── */
+
+  const base64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const randomString = (length) => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    return Array.from(crypto.getRandomValues(new Uint8Array(length)), (b) => chars[b % chars.length]).join('');
+  };
+
+  async function authorize() {
+    const verifier = randomString(64);
+    const expectedState = randomString(24);
+    const challenge = base64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+    const redirect = new URL('oauth.html', location.href).href;
+    const url = new URL(OAUTH_AUTHORIZE);
+    url.search = new URLSearchParams({
+      client_id: OAUTH_CLIENT_ID,
+      redirect_uri: redirect,
+      response_type: 'code',
+      scope: 'write',
+      state: expectedState,
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+    });
+    const popup = window.open(url.href, 'to-arena-oauth', 'width=560,height=760');
+    if (!popup) throw new Error('Your browser blocked the Are.na window. Allow pop-ups for this page, then try again.');
+
+    const code = await new Promise((resolve, reject) => {
+      const stop = () => {
+        clearInterval(watch);
+        window.removeEventListener('message', onMessage);
+      };
+      const onMessage = (e) => {
+        if (e.origin !== location.origin || e.source !== popup || e.data?.type !== 'to-arena/oauth') return;
+        stop();
+        if (e.data.state !== expectedState) reject(new Error('The Are.na answer didn’t match this request. Try again.'));
+        else if (e.data.error || !e.data.code) reject(new Error(e.data.error === 'access_denied' ? 'Access was not allowed on Are.na.' : `Are.na said: ${e.data.error || 'no code'}`));
+        else resolve(e.data.code);
+      };
+      const watch = setInterval(() => {
+        if (popup.closed) {
+          stop();
+          reject(Object.assign(new Error('Closed'), { cancelled: true }));
+        }
+      }, 600);
+      window.addEventListener('message', onMessage);
+    });
+
+    const res = await fetch(OAUTH_TOKEN, {
+      method: 'POST',
+      body: new URLSearchParams({ grant_type: 'authorization_code', client_id: OAUTH_CLIENT_ID, code, redirect_uri: redirect, code_verifier: verifier }),
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.access_token) throw new Error(`Are.na didn’t hand over access (${res.status}).`);
+    return json.access_token;
   }
 
   $('disconnect').addEventListener('click', () => {
@@ -478,13 +691,11 @@
     return emptyJournal();
   }
 
-  const saveJournal = () => state.me && store.set('localStorage', journalKey(state.me.id), JSON.stringify(state.journal));
+  const saveJournal = () => !demo && state.me && store.set('localStorage', journalKey(state.me.id), JSON.stringify(state.journal));
 
   $('forget-journal').addEventListener('click', () => {
     if (!state.me || busy()) return;
-    const ok = window.confirm(
-      'Forget the import history of this account? Channels already made stay on Are.na; the next transfer finds them again through their metadata.'
-    );
+    const ok = window.confirm('Forget the import history of this account? Channels already made stay on Are.na; the next transfer finds them again through their metadata.');
     if (!ok) return;
     store.remove('localStorage', journalKey(state.me.id));
     state.journal = emptyJournal();
@@ -499,10 +710,19 @@
     String(name || '?')
       .trim()
       .split(/\s+/)
+      .map((part) => part.replace(/[^\p{L}\p{N}]/gu, ''))
+      .filter(Boolean)
       .slice(0, 2)
       .map((part) => part[0])
       .join('')
       .toUpperCase();
+
+  /* With OAuth, the token form moves into “Use a personal access token instead”. */
+  if (oauthAvailable()) {
+    $('oauth-block').hidden = false;
+    $('token-alt').hidden = false;
+    $('token-alt').appendChild($('token-block'));
+  }
 
   function updateConnect() {
     const { me, journal } = state;
@@ -516,11 +736,15 @@
       $('topbar-name').textContent = name;
       const already = Object.keys(journal.blocks).length;
       const text = $('account-text');
-      text.replaceChildren('Signed in as ', Object.assign(document.createElement('strong'), { textContent: name }), ` · ${tier}`);
+      text.replaceChildren('Signed in as ', el('strong', { textContent: name }), ` · ${tier}`);
       if (already) text.append(` · ${plural(already, 'block', 'blocks')} imported from this browser`);
     }
-    const next = $('connect-next');
-    next.disabled = !(me && state.plan?.stats.channels);
+    const stats = state.plan?.stats;
+    $('connect-estimate').textContent =
+      stats && me?.tier === 'free'
+        ? `About ${plural(stats.connections + stats.nests, 'block', 'blocks')} of the ${FREE_TIER_LIMIT} a free account holds`
+        : '';
+    $('connect-next').disabled = !(me && stats?.channels);
   }
 
   /* ───────────── Transfer ───────────── */
@@ -556,18 +780,13 @@
     const minutes = Math.max(1, Math.round((writes * 0.75) / 60));
     const table = $('plan-table');
     table.replaceChildren();
-    const row = (label, value) => {
-      table.append(
-        Object.assign(document.createElement('dt'), { textContent: label }),
-        Object.assign(document.createElement('dd'), { textContent: value })
-      );
-    };
+    const row = (label, value) => table.append(el('dt', { textContent: label }), el('dd', { textContent: value }));
     row('Channels', n(stats.channels) + (stats.nests ? ` (${n(stats.nests)} inside another)` : ''));
     row('New blocks', n(stats.blocks));
     if (stats.reused) row('Extra connections, for items in several channels', n(stats.reused));
     if (stats.arena) row('Connections to Are.na originals', n(stats.arena));
     if (stats.skippedElements) row('Items without content, skipped', n(stats.skippedElements));
-    row('Estimated time', `about ${n(minutes)} min, plus any pause Are.na asks for`);
+    row('Estimated time', demo ? 'a few seconds in the demo' : `about ${n(minutes)} min, plus any pause Are.na asks for`);
 
     const warning = $('plan-warning');
     const total = stats.connections + stats.nests;
@@ -575,7 +794,7 @@
     if (me?.tier === 'free') {
       warning.replaceChildren(
         'A free Are.na account holds ',
-        Object.assign(document.createElement('strong'), { textContent: `${FREE_TIER_LIMIT} blocks` }),
+        el('strong', { textContent: `${FREE_TIER_LIMIT} blocks` }),
         ` in total. This transfer adds ${n(total)}`,
         total > FREE_TIER_LIMIT ? ', so it would stop partway: upgrade to Premium, or select less.' : ', on top of what you already have.'
       );
@@ -583,8 +802,7 @@
 
     simulate.disabled = busy();
     start.disabled = !me || busy() || !stats.channels;
-    start.textContent =
-      state.lastOutcome === 'paused' ? 'Resume' : state.lastOutcome === 'failed' ? 'Retry failed items' : 'Transfer';
+    start.textContent = state.lastOutcome === 'paused' ? 'Resume' : state.lastOutcome === 'failed' ? 'Retry failed items' : 'Transfer';
   }
 
   $('start').addEventListener('click', () => {
@@ -593,15 +811,14 @@
   });
   $('simulate').addEventListener('click', () => startRun(true));
 
-  /* ───────────── Progress view (transfer and fix) ───────────── */
+  /* ───────────── Progress ───────────── */
 
   function createRunView(root) {
     const q = (key) => root.querySelector(`[data-run="${key}"]`);
     let waitTimer = null;
     return {
-      reset(phase, { counters = true } = {}) {
+      reset(phase) {
         root.hidden = false;
-        root.querySelector('.counters').hidden = !counters;
         q('phase').textContent = phase;
         q('count').textContent = '';
         q('wait').textContent = '';
@@ -643,12 +860,12 @@
       },
       log(level, message, url) {
         const list = q('log');
-        const li = Object.assign(document.createElement('li'), { className: level });
+        const li = el('li', { className: level });
         li.textContent = `${new Date().toLocaleTimeString('en-GB')}  ${message}`;
         const safe = normalizeUrl(url);
         if (safe) {
           li.append(' · ');
-          li.appendChild(Object.assign(document.createElement('a'), { href: safe, target: '_blank', rel: 'noopener noreferrer', textContent: 'source' }));
+          li.appendChild(el('a', { href: safe, target: '_blank', rel: 'noopener noreferrer', textContent: 'source' }));
         }
         list.appendChild(li);
         while (list.children.length > 400) list.firstChild.remove();
@@ -659,15 +876,15 @@
       },
       result(text, { actions = [] } = {}) {
         const box = q('result');
-        box.replaceChildren(Object.assign(document.createElement('p'), { textContent: text }));
+        box.replaceChildren(el('p', { textContent: text }));
         if (actions.length) {
-          const row = Object.assign(document.createElement('div'), { className: 'actions' });
+          const row = el('div', { className: 'actions' });
           for (const { label, onClick, href } of actions) {
-            const el = href
-              ? Object.assign(document.createElement('a'), { className: 'btn', href, target: '_blank', rel: 'noopener noreferrer', textContent: label })
-              : Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: label });
-            if (onClick) el.addEventListener('click', onClick);
-            row.appendChild(el);
+            const node = href
+              ? el('a', { className: 'btn', href, target: '_blank', rel: 'noopener noreferrer', textContent: label })
+              : el('button', { type: 'button', className: 'btn', textContent: label });
+            if (onClick) node.addEventListener('click', onClick);
+            row.appendChild(node);
           }
           box.appendChild(row);
         }
@@ -702,7 +919,7 @@
     const release = await holdPage();
 
     const journal = dryRun ? emptyJournal() : state.journal;
-    const client = dryRun ? new DryRunClient({ signal }) : new ArenaClient(session.token, { signal, onWait: (until) => (run.waited += importView.wait(until)) });
+    const client = dryRun ? new DryRunClient({ signal }) : makeClient(session.token, { signal, onWait: (until) => (run.waited += importView.wait(until)) });
     const persist = dryRun ? () => {} : throttle(saveJournal, 800);
 
     try {
@@ -766,12 +983,12 @@
     const li = document.createElement('li');
     const owner = channel.owner || state.me?.slug;
     const title = channel.title || planned?.title;
-    if (!run.dryRun && owner && channel.slug) {
-      li.appendChild(Object.assign(document.createElement('a'), { href: arenaUrl(owner, channel.slug), target: '_blank', rel: 'noopener noreferrer', textContent: title }));
+    if (!run.dryRun && !demo && owner && channel.slug) {
+      li.appendChild(el('a', { href: arenaUrl(owner, channel.slug), target: '_blank', rel: 'noopener noreferrer', textContent: title }));
     } else {
       li.append(title);
     }
-    li.appendChild(Object.assign(document.createElement('span'), { textContent: plural(planned?.count || 0, ...words().item) }));
+    li.appendChild(el('span', { textContent: plural(planned?.count || 0, ...site().item) }));
     $('channels').appendChild(li);
     $('channels-head').hidden = false;
   }
@@ -797,18 +1014,17 @@
     if (counts.skipped) parts.push(`${plural(counts.skipped, 'item', 'items')} already there`);
     let text = `Done: ${parts.join(', ')}.`;
     if (failures.length) text += ` ${plural(failures.length, 'item', 'items')} couldn’t be transferred: “Retry failed items” tries them again.`;
-    importView.result(text, {
-      actions: [
-        ...(state.me?.slug ? [{ label: 'Open Are.na', href: `https://www.are.na/${encodeURIComponent(state.me.slug)}` }] : []),
-        { label: 'Download report', onClick: () => downloadImportReport({ counts, failures }) },
-      ],
-    });
+    const open = demo
+      ? [{ label: 'See the result', onClick: () => demo.showResult() }]
+      : state.me?.slug
+        ? [{ label: 'Open Are.na', href: `https://www.are.na/${encodeURIComponent(state.me.slug)}` }]
+        : [];
+    importView.result(text, { actions: [...open, { label: 'Download report', onClick: () => downloadImportReport({ counts, failures }) }] });
   }
 
   function fatalMessage(err) {
-    if (err.status === 401) return 'Are.na refused the token (401). Connect again with a valid token, then resume.';
-    if (err.status === 403)
-      return `Are.na refused to write (403). Check that the token has write access, and that your account isn’t at the free plan’s limit. ${err.message}`;
+    if (err.status === 401) return 'Are.na refused the access (401). Connect again, then resume.';
+    if (err.status === 403) return `Are.na refused to write (403). Check that your access can write, and that your account isn’t at the free plan’s limit. ${err.message}`;
     if (err.status === 404) return `A channel disappeared during the run. Resume: it will be made again. ${err.message}`;
     if (err.status === 0) return `${err.message}. Check your connection, then resume.`;
     return `Unexpected error: ${err.message}. You can resume.`;
@@ -827,10 +1043,7 @@
   const today = () => new Date().toISOString().slice(0, 10);
 
   function downloadJson(filename, value) {
-    const a = Object.assign(document.createElement('a'), {
-      href: URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })),
-      download: filename,
-    });
+    const a = el('a', { href: URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })), download: filename });
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -879,18 +1092,17 @@
 
   /* ───────────── Start ───────────── */
 
-  const savedToken =
-    store.get('localStorage', TOKEN_KEY) ||
-    store.get('sessionStorage', TOKEN_KEY) ||
-    store.get('localStorage', LEGACY_TOKEN_KEY) ||
-    store.get('sessionStorage', LEGACY_TOKEN_KEY);
+  $('desktop-note').hidden = !(matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches);
+  if (location.protocol === 'file:' || demo) $('demo-link').hidden = true;
+
+  const savedToken = !demo &&
+    (store.get('localStorage', TOKEN_KEY) || store.get('sessionStorage', TOKEN_KEY) || store.get('localStorage', LEGACY_TOKEN_KEY) || store.get('sessionStorage', LEGACY_TOKEN_KEY));
   if (savedToken) {
-    $('token').value = savedToken;
     $('remember').checked = !!(store.get('localStorage', TOKEN_KEY) || store.get('localStorage', LEGACY_TOKEN_KEY));
-    connect();
+    connect(savedToken, $('connect'));
   }
 
   render();
   $('boot-warning').remove();
-  window.toArena = { loadExport, state, go };
+  window.toArena = { receive, state, go };
 })();
