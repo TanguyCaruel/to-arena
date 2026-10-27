@@ -688,7 +688,8 @@ select {
   cursor: pointer;
 }
 
-input[type='checkbox'] {
+input[type='checkbox'],
+input[type='radio'] {
   width: 16px;
   height: 16px;
   margin: 0;
@@ -754,6 +755,48 @@ input[type='checkbox'] {
 .row__meta {
   font: 400 15px/20px var(--font-sans);
   color: var(--ink-muted);
+}
+
+/* ── Destination ── */
+
+.row--destination {
+  cursor: default;
+}
+
+.row--destination .row__text {
+  flex: 1;
+}
+
+.row--destination select {
+  flex: 0 0 220px;
+  width: 220px;
+}
+
+.picker {
+  width: min(560px, calc(100vw - 2 * var(--space-4)));
+  max-height: 80vh;
+  padding: var(--space-6);
+  border: var(--hairline) solid var(--line-strong);
+  border-radius: var(--radius-none);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.picker::backdrop {
+  background: var(--ink-strong);
+  opacity: 0.3;
+}
+
+.picker .heading {
+  margin-bottom: 0;
+}
+
+.picker .list {
+  max-height: 320px;
+}
+
+.picker .actions {
+  margin-top: var(--space-4);
 }
 
 /* ── Connect ── */
@@ -1015,6 +1058,15 @@ input[type='checkbox'] {
 
   .token-row {
     flex-direction: column;
+  }
+
+  .row--destination {
+    flex-wrap: wrap;
+  }
+
+  .row--destination select {
+    flex-basis: 100%;
+    width: 100%;
   }
 
   .toolbar input {

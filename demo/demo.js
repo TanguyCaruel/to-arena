@@ -8,7 +8,14 @@
 
   const M = window.ToArenaMocks;
   const T = window.ToArena;
-  const arena = M.arenaApi();
+  /* A few channels made by hand, so “Pick existing” has something to show. */
+  const arena = M.arenaApi({
+    existing: [
+      { title: 'ceramics', visibility: 'public', blocks: 3 },
+      { title: 'houses i like', visibility: 'private', blocks: 5 },
+      { title: 'type', visibility: 'public', blocks: 0 },
+    ],
+  });
   const SITES = {
     pinterest: { name: 'Pinterest', host: 'pinterest.com', origin: 'https://www.pinterest.com', data: M.pinterestData() },
     cosmos: { name: 'Cosmos', host: 'cosmos.so', origin: 'https://www.cosmos.so', data: M.cosmosData() },

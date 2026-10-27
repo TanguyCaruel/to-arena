@@ -151,7 +151,12 @@
 
             <div class="settings">
               <h3 class="col-head">Settings</h3>
-              <label class="field">
+              <label class="check" id="batch-mode-row" hidden>
+                <input type="checkbox" id="batch-mode" checked />
+                <span>Batch mode — much quieter imports (Are.na Premium)</span>
+              </label>
+              <p class="hint" id="batch-mode-hint" hidden>New channels are made private. Existing non-private destinations fall back to single-POST (noisy for those).</p>
+              <label class="field" id="visibility-row">
                 <span>Channel privacy</span>
                 <select id="visibility">
                   <option value="mirror">Same as the source (private stays private)</option>
@@ -196,11 +201,29 @@
             </div>
           </section>
 
+          <!-- Destination -->
+          <section class="panel" data-step="destination" aria-labelledby="h-destination" hidden>
+            <h2 class="heading" id="h-destination" tabindex="-1">Choose destinations</h2>
+            <p class="meta">Each one goes into a new channel, unless you pick one of your own.</p>
+            <ul class="list" id="destinations"></ul>
+            <p class="hint" id="destinations-hint" role="status" hidden></p>
+            <label class="check" id="prefix-row">
+              <input type="checkbox" id="prefix-nested" /> <span>Prepend parent channel name to nested channels</span>
+            </label>
+            <div class="next">
+              <span class="meta" id="destination-count"></span>
+              <button type="button" class="btn" data-next="transfer">
+                Continue <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+              </button>
+            </div>
+          </section>
+
           <!-- Transfer -->
           <section class="panel" data-step="transfer" aria-labelledby="h-transfer" hidden>
             <h2 class="heading" id="h-transfer" tabindex="-1">Review and transfer</h2>
             <dl class="meta-table" id="plan-table"></dl>
             <p class="note-box" id="plan-warning" hidden></p>
+            <p class="note-box" id="plan-notes" hidden></p>
             <div class="actions">
               <button type="button" class="btn btn--primary" id="start">Transfer</button>
               <button type="button" class="btn" id="simulate">Simulate first</button>
@@ -231,6 +254,19 @@
         </div>
       </div>
     </main>
+
+    <dialog class="picker" id="picker" aria-labelledby="picker-title">
+      <h3 class="heading" id="picker-title">Pick an existing channel</h3>
+      <div class="toolbar">
+        <input type="search" id="picker-filter" placeholder="Filter" aria-label="Filter your channels" />
+      </div>
+      <ul class="list" id="picker-list"></ul>
+      <p class="error" id="picker-error" role="alert" hidden></p>
+      <div class="actions">
+        <button type="button" class="btn btn--primary" id="picker-choose">Choose</button>
+        <button type="button" class="btn" id="picker-cancel">Cancel</button>
+      </div>
+    </dialog>
 
     <footer class="footer">
       <p>

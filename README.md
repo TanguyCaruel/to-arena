@@ -44,7 +44,12 @@ You need an Are.na account, a computer, and your Cosmos or Pinterest account ope
 3. **Connect.** Press **Connect with Are.na** and allow access, or paste an
    [Are.na personal access token](https://www.are.na/settings/personal-access-tokens) with **read and write** access.
    The page checks that it can write, then you pick the channel privacy and how to handle carousels.
-4. **Transfer.** Read the summary, **Simulate first** if you like, then **Transfer**. You can pause and resume.
+4. **Destination.** Each board or collection goes into a new channel unless you choose **Pick existing…** next to it
+   and pick one of your own channels. The page never changes the privacy or name of a channel you pick, and tags it so
+   a later transfer finds it again. Only channels you own are listed. If you are importing sections or
+   sub-collections, you can tick **Prepend parent channel name to nested channels**: the section “figure - line” of a
+   board sent to your channel “drawing” becomes “drawing - figure - line”.
+5. **Transfer.** Read the summary, **Simulate first** if you like, then **Transfer**. You can pause and resume.
 
 ## What goes where
 
@@ -63,6 +68,7 @@ You need an Are.na account, a computer, and your Cosmos or Pinterest account ope
 | Pinterest title, description, alt text | Same fields on the block |
 | Source link and author | The block’s source, and a “Via …” credit (Cosmos) |
 | Item in several collections | One block connected to several channels |
+| Board or collection sent to an existing channel | Its items are added to that channel, which keeps its name and privacy |
 | Whole Cosmos library (optional) | A “Cosmos · all items” channel |
 
 A Pinterest board also lists the pins of its sections: when a section is imported as its own channel inside the
@@ -126,7 +132,8 @@ node tests/export.test.mjs
 
 To publish a new version of the download, zip the page files (without `tests/` and `demo/`) in a folder named
 `To Are.na`, then attach `To-Arena.zip` to a new [release](https://github.com/TanguyCaruel/to-arena/releases). Bump
-`VERSION` in `demo/boot.js` so the demo loads the new scripts.
+`VERSION` in `demo/boot.js` with any change to the page files (`index.html`, `styles.css`, `app.js`, `arena.js`) so the
+demo loads the new scripts.
 
 ## License
 

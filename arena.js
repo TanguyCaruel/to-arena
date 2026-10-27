@@ -17,6 +17,12 @@
   const S3_TEMP = 'https://s3.amazonaws.com/arena_images-temp/';
   const FREE_TIER_LIMIT = 200;
 
+  /* Batch endpoint (Premium only): up to 50 blocks per request, destination channel must be private. */
+  const BATCH_MAX = 50;
+  const BATCH_POLL_MS = 2500;
+  const BATCH_POLL_FIRST_MS = 1500;
+  const BATCH_POLL_TIMEOUT_MS = 300_000;
+
   /*
    * Each source tags what it creates on Are.na with its own metadata keys, so a later run can
    * find its channels and blocks again. Cosmos keeps the keys of the first version of the tool.
@@ -389,6 +395,8 @@
       carousel = 'first',
       arenaLinks = true,
       libraryTitle = 'Cosmos · all items',
+      destinations = {},
+      prefixNested = false,
     } = options;
     const source = data.source || 'cosmos';
     const { prefix, meta, library } = SOURCES[source];
@@ -406,16 +414,36 @@
       }
     }
 
+    /* An existing Are.na channel chosen for a collection: { channelId, slug, title, visibility }. */
+    const picked = (c) => {
+      const d = Object.hasOwn(destinations, c.id) ? destinations[c.id] : null;
+      return d && typeof d === 'object' && d.channelId != null ? d : null;
+    };
+    const byId = new Map(collections.map((c) => [c.id, c]));
+    /* The names of a collection's selected ancestors, from the top: a picked channel lends its own title. */
+    const lineage = (c) => {
+      const names = [];
+      for (const seen = new Set([c.id]); isChild(c) && !seen.has(c.parentId); ) {
+        c = byId.get(c.parentId);
+        seen.add(c.id);
+        names.unshift(picked(c)?.title || c.name || 'Untitled');
+      }
+      return names;
+    };
+
     const channels = collections.map((c) => {
       const inChildren = c.includesChildren && nestedChildren.get(c.id);
+      const target = picked(c);
+      const name = c.name || 'Untitled';
       return {
         key: `${prefix}${c.id}`,
-        title: c.name || 'Untitled',
+        title: prefixNested && !target ? [...lineage(c), name].join(' - ') : name,
         description: c.description || '',
         visibility: visibilityFor(visibility, c.isPrivate),
         parentKey: nest && isChild(c) ? `${prefix}${c.parentId}` : null,
         elementIds: inChildren ? c.elementIds.filter((id) => !inChildren.has(id)) : c.elementIds,
         metadata: clean({ [meta.collection]: c.id, [meta.slug]: c.slug }),
+        ...(target && { targetChannelId: target.channelId, targetSlug: target.slug, targetTitle: target.title, targetVisibility: target.visibility }),
       };
     });
     if (includeLibrary && data.library) {
@@ -478,7 +506,7 @@
     return { v: 1, channels: {}, blocks: {}, links: {}, nests: {} };
   }
 
-  const pickChannel = (ch) => ({ id: ch.id, slug: ch.slug, title: ch.title, owner: ch.owner?.slug || null });
+  const pickChannel = (ch) => ({ id: ch.id, slug: ch.slug, title: ch.title, owner: ch.owner?.slug || null, visibility: ch.visibility ?? null });
 
   /* Journal key of a connection: blocks and channels don't share the same id space. */
   const refLinkKey = (ref, channelId) => `${ref.type === 'Channel' ? 'channel:' : ''}${ref.id}>${channelId}`;
@@ -565,7 +593,75 @@
     return items;
   }
 
-  async function runImport({ plan, client, journal, me, imageMode = 'url', signal, fetchImpl, emit = () => {}, persist = () => {} }) {
+  /* The channels the user owns, for choosing an existing destination. */
+  async function listUserChannels(client, me, checkAbort = () => {}) {
+    const found = await listAll(client, `/users/${me.id}/contents`, { type: 'Channel' }, checkAbort, 50);
+    return found
+      .filter((ch) => ch.state !== 'deleted')
+      .map((ch) => ({ id: ch.id, slug: ch.slug, title: ch.title, visibility: ch.visibility, length: ch.counts?.contents ?? ch.length ?? null, metadata: ch.metadata ?? null }));
+  }
+
+  /*
+   * Submits one chunk (≤ BATCH_MAX blocks) to POST /blocks/batch and polls GET /blocks/batch/{id}
+   * until completion. Returns a results array the same length as `steps`, each element
+   * { step, blockId, error } — one or the other is set.
+   * Pre-uploads media when imageMode === 'upload' (sequentially); upload failures become per-step
+   * errors and are excluded from the batch submission.
+   * Throws for network/auth/server errors so the caller can decide (fatal, or disable batch mode).
+   */
+  async function batchCreateBlocks(client, channelId, steps, { imageMode, uploadMedia, signal }) {
+    const results = steps.map((step) => ({ step, blockId: null, error: null }));
+    const prepared = []; /* { stepIdx, payload } */
+    for (let i = 0; i < steps.length; i++) {
+      if (signal?.aborted) throw new AbortedError();
+      const step = steps[i];
+      let value = step.payload.value;
+      if (step.mediaUrl && imageMode === 'upload') {
+        try {
+          value = await uploadMedia(step.mediaUrl);
+        } catch (err) {
+          results[i].error = err;
+          continue;
+        }
+      }
+      prepared.push({ stepIdx: i, payload: { ...step.payload, value } });
+    }
+    if (!prepared.length) return results;
+
+    const submitRes = await client.request('POST', '/blocks/batch', {
+      body: { channel_ids: [channelId], blocks: prepared.map((p) => p.payload) },
+    });
+    const batchId = submitRes.batch_id;
+
+    await sleep(BATCH_POLL_FIRST_MS, signal);
+    const started = Date.now();
+    let status;
+    for (;;) {
+      if (signal?.aborted) throw new AbortedError();
+      status = await client.request('GET', `/blocks/batch/${batchId}`);
+      if (status.status === 'completed' || status.status === 'failed') break;
+      if (Date.now() - started > BATCH_POLL_TIMEOUT_MS) {
+        throw new ArenaError(0, `Batch ${batchId} did not complete within ${Math.round(BATCH_POLL_TIMEOUT_MS / 1000)}s`);
+      }
+      await sleep(BATCH_POLL_MS, signal);
+    }
+
+    const batchIdxToStepIdx = new Map(prepared.map((p, bi) => [bi, p.stepIdx]));
+    for (const { index, block_id } of status.successful || []) {
+      const si = batchIdxToStepIdx.get(index);
+      if (si != null) results[si].blockId = block_id;
+    }
+    for (const { index, error } of status.failed || []) {
+      const si = batchIdxToStepIdx.get(index);
+      if (si != null) results[si].error = new ArenaError(0, error || 'Batch item failed');
+    }
+    if (status.error) {
+      for (const r of results) if (!r.blockId && !r.error) r.error = new ArenaError(0, status.error);
+    }
+    return results;
+  }
+
+  async function runImport({ plan, client, journal, me, imageMode = 'url', batchMode = false, signal, fetchImpl, emit = () => {}, persist = () => {} }) {
     const doFetch = fetchImpl || ((...args) => fetch(...args));
     const resolve = refResolver(client);
     const counts = { channelsCreated: 0, channelsReused: 0, created: 0, connected: 0, linked: 0, skipped: 0, failed: 0, nested: 0 };
@@ -588,9 +684,17 @@
       checkAbort();
       if (journal.channels[ch.key]) {
         counts.channelsReused++;
+      } else if (ch.targetChannelId != null && (await adoptChannel(ch))) {
+        /* an existing channel chosen by the user */
       } else {
         const created = await client.request('POST', '/channels', {
-          body: clean({ title: ch.title, visibility: ch.visibility, description: ch.description, metadata: ch.metadata }),
+          body: clean({
+            title: ch.title,
+            /* Batch mode requires a private destination; the user picked batch mode knowing this. */
+            visibility: batchMode ? 'private' : ch.visibility,
+            description: ch.description,
+            metadata: ch.metadata,
+          }),
         });
         journal.channels[ch.key] = pickChannel(created);
         counts.channelsCreated++;
@@ -602,9 +706,74 @@
       tick();
     }
 
+    /*
+     * Batched block creation (Premium). Handled before the main loop so later steps that
+     * reference the same block (same blockKey, different channel) can connect it normally.
+     * Only new blocks destined for private channels batch; everything else falls through.
+     * On 403, batch mode is disabled for the rest of the run and the main loop picks up.
+     */
+    const batchHandled = new Set();
+    if (batchMode && plan.steps.length && !(client instanceof DryRunClient)) {
+      const perChannel = new Map(); /* channelId -> { channel, steps: [] } */
+      for (const step of plan.steps) {
+        if (step.target) continue; /* arena-ref link, not a create */
+        if (!step.payload) continue;
+        if (journal.blocks[step.blockKey]) continue; /* already created in an earlier run */
+        const channel = journal.channels[step.channelKey];
+        if (!channel) continue;
+        if (channel.visibility && channel.visibility !== 'private') continue; /* batch requires private */
+        if (!perChannel.has(channel.id)) perChannel.set(channel.id, { channel, steps: [] });
+        perChannel.get(channel.id).steps.push(step);
+      }
+      if (perChannel.size) {
+        const total = Array.from(perChannel.values()).reduce((s, { steps }) => s + steps.length, 0);
+        emit({ type: 'phase', label: `Batching ${total} item${total === 1 ? '' : 's'} (premium)` });
+        outer: for (const [channelId, { channel, steps: chSteps }] of perChannel) {
+          for (let i = 0; i < chSteps.length; i += BATCH_MAX) {
+            checkAbort();
+            const chunk = chSteps.slice(i, i + BATCH_MAX);
+            try {
+              const results = await batchCreateBlocks(client, channelId, chunk, { imageMode, uploadMedia, signal });
+              let ok = 0;
+              for (const { step, blockId, error } of results) {
+                if (blockId) {
+                  journal.blocks[step.blockKey] = blockId;
+                  journal.links[`${blockId}>${channelId}`] = 1;
+                  counts.created++;
+                  batchHandled.add(step.blockKey);
+                  ok++;
+                } else if (error) {
+                  counts.failed++;
+                  failures.push({ blockKey: step.blockKey, channelKey: step.channelKey, url: step.url, error: error.message });
+                  log('error', `Failed (batch): ${error.message}`, { url: step.url });
+                  batchHandled.add(step.blockKey);
+                }
+              }
+              persist(journal);
+              log('ok', `Batched ${ok}/${results.length} into ${channel.title}`);
+            } catch (err) {
+              if (err instanceof AbortedError) throw err;
+              if (err.status === 403) {
+                log('warn', `Batch mode disabled: ${err.message}. Falling back to single-POST for the rest.`);
+                batchMode = false;
+                break outer;
+              }
+              /* Non-fatal chunk failure: let the main loop retry these steps one at a time. */
+              log('warn', `Batch chunk failed: ${err.message}. Items will be retried one at a time.`);
+            }
+          }
+        }
+      }
+    }
+
     emit({ type: 'phase', label: 'Transferring items' });
     for (const step of plan.steps) {
       checkAbort();
+      if (batchHandled.has(step.blockKey)) {
+        done++;
+        tick();
+        continue;
+      }
       const channel = journal.channels[step.channelKey];
       const linkKey = (blockId) => `${blockId}>${channel.id}`;
       try {
@@ -663,6 +832,53 @@
 
     function isFatal(err) {
       return err instanceof AbortedError || [0, 401, 403].includes(err.status) || (err.status === 404 && err.channel);
+    }
+
+    /* Uses the channel the user picked; false when it has gone, so that a new one is made instead. */
+    async function adoptChannel(ch) {
+      let live = null;
+      if (client instanceof DryRunClient) {
+        journal.channels[ch.key] = { id: ch.targetChannelId, slug: ch.targetSlug, title: ch.targetTitle, owner: null };
+      } else {
+        try {
+          const found = await client.request('GET', `/channels/${ch.targetChannelId}`);
+          if (!found?.id || found.state === 'deleted') throw new ArenaError(404, 'deleted');
+          journal.channels[ch.key] = pickChannel(found);
+          live = found;
+        } catch (err) {
+          if (err.status !== 404) throw err;
+          log('warn', `The channel “${ch.targetTitle || ch.title}” no longer exists: a new channel is created instead.`);
+          return false;
+        }
+      }
+      counts.channelsReused++;
+      log('ok', `Using existing channel: ${journal.channels[ch.key].title}`);
+      persist(journal);
+      if (live) await tagPicked(ch, live.metadata);
+      return true;
+    }
+
+    /*
+     * Tags a picked channel like the ones this tool makes, so that the next run finds it again without
+     * being picked again. Are.na merges metadata, so what other tools stored there stays. A channel
+     * already tagged for another collection is left as it is.
+     */
+    async function tagPicked(ch, current) {
+      const { collection } = (SOURCES[plan.source] || SOURCES.cosmos).meta;
+      const tag = ch.metadata || {};
+      const title = journal.channels[ch.key].title;
+      if (current?.[collection] != null && String(current[collection]) !== String(tag[collection])) {
+        log('info', `“${title}” is already linked to another collection: its tag is left as it is.`);
+        return;
+      }
+      const changes = Object.fromEntries(Object.entries(tag).filter(([k, v]) => String(current?.[k] ?? '') !== String(v)));
+      if (!Object.keys(changes).length) return;
+      try {
+        await client.request('PUT', `/channels/${journal.channels[ch.key].id}`, { body: { metadata: changes } });
+      } catch (err) {
+        if (err instanceof AbortedError || [0, 401].includes(err.status)) throw err;
+        log('warn', `Couldn’t tag “${title}” for next time (${err.message}): the transfer carries on, but you may need to pick it again.`);
+      }
     }
 
     async function linkOriginal(step, channel) {
@@ -807,6 +1023,7 @@
     checkWriteAccess,
     elementSteps,
     emptyJournal,
+    listUserChannels,
     normalizeExport,
     normalizeUrl,
     runImport,

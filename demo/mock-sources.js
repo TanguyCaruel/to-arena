@@ -308,7 +308,7 @@
    * An in-memory Are.na: channels, blocks and connections, with positions (1 = bottom, highest =
    * top), a read-only token, and one rate-limit pause so the countdown can be seen.
    */
-  function arenaApi({ latency = 35, pauseAfterWrites = 18, pauseSeconds = 3, tier = 'premium' } = {}) {
+  function arenaApi({ latency = 35, pauseAfterWrites = 18, pauseSeconds = 3, tier = 'premium', existing = [] } = {}) {
     const S = { channels: new Map(), blocks: new Map(), nextId: 1000, nextConn: 1, writes: 0, paused: false };
     for (const [id, title] of Object.entries(ARENA_ORIGINALS)) S.blocks.set(Number(id), { id: Number(id), external: true, kind: 'Image', title, value: image(`arena${id}`) });
 
@@ -317,6 +317,18 @@
       const p = +q.get('page') || 1;
       return { data: arr.slice((p - 1) * per, p * per), meta: { has_more_pages: p * per < arr.length } };
     };
+    /* Channels the user already has, made by hand: `existing` is a list of { title, visibility, blocks }. */
+    for (const { title, visibility = 'public', blocks = 0 } of existing) {
+      const id = S.nextId++;
+      const items = [];
+      for (let i = 0; i < blocks; i++) {
+        const blockId = S.nextId++;
+        S.blocks.set(blockId, { id: blockId, kind: 'Text', title: `${title} ${i + 1}`, metadata: null });
+        items.push({ type: 'Block', id: blockId, connId: S.nextConn++, metadata: null });
+      }
+      S.channels.set(id, { id, slug: `${String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${id}`, title, visibility, metadata: null, items });
+    }
+
     const findChannel = (idOrSlug) => S.channels.get(+idOrSlug) || [...S.channels.values()].find((c) => c.slug === idOrSlug);
     const connect = (c, item, metadata) => c.items.push({ ...item, connId: S.nextConn++, metadata: metadata || null });
     const view = (it, index) => {
@@ -347,12 +359,12 @@
       let m;
       if (method === 'GET' && path === '/me') return json({ id: 42, slug: 'you', name: 'You (demo)', tier, avatar: null });
       if (method === 'GET' && (m = path.match(/^\/users\/(\d+)\/contents$/))) {
-        const mine = [...S.channels.values()].map((c) => ({ id: c.id, type: 'Channel', slug: c.slug, title: c.title, metadata: c.metadata, state: 'available' }));
+        const mine = [...S.channels.values()].map((c) => ({ id: c.id, type: 'Channel', slug: c.slug, title: c.title, metadata: c.metadata, state: 'available', visibility: c.visibility, length: c.items.length }));
         return json(page(mine, u.searchParams));
       }
       if (method === 'GET' && (m = path.match(/^\/channels\/([^/]+)$/))) {
         const c = findChannel(m[1]);
-        return c ? json({ id: c.id, slug: c.slug, title: c.title, state: 'available' }) : json({ error: 'Not Found' }, 404);
+        return c ? json({ id: c.id, slug: c.slug, title: c.title, state: 'available', visibility: c.visibility, owner: { slug: 'you' } }) : json({ error: 'Not Found' }, 404);
       }
       if (method === 'GET' && (m = path.match(/^\/channels\/(\d+)\/contents$/))) {
         const c = S.channels.get(+m[1]);
@@ -373,6 +385,33 @@
         S.blocks.set(id, { id, kind, title: b.title || '', value: b.value, cover: b.cover_url || null, description: b.description || '', metadata: b.metadata, sourceUrl: kind === 'Link' ? b.value : b.original_source_url || null });
         connect(c, { type: 'Block', id });
         return json({ id, type: 'PendingBlock' }, 201);
+      }
+      /* Batch create — Premium only; refuses non-private destinations; returns a batch_id and completes synchronously on first poll. */
+      if (method === 'POST' && path === '/blocks/batch') {
+        if (tier !== 'premium') return json({ error: 'Premium subscription required', code: 403 }, 403);
+        const channelIds = b.channel_ids || [];
+        const targetChannels = channelIds.map((id) => findChannel(id));
+        if (targetChannels.some((c) => !c)) return json({ error: 'Not Found' }, 404);
+        if (targetChannels.some((c) => c.visibility !== 'private')) return json({ error: 'Batch destinations must be private', code: 422 }, 422);
+        const batchId = `demo-batch-${S.nextId++}`;
+        const successful = [];
+        const failed = [];
+        (b.blocks || []).forEach((blk, index) => {
+          const isUrl = /^https?:\/\//.test(blk.value);
+          const kind = !isUrl ? 'Text' : isDemoUrl(blk.value) ? (/\.mp4$/.test(blk.value) ? 'Attachment' : 'Image') : 'Link';
+          const id = S.nextId++;
+          S.blocks.set(id, { id, kind, title: blk.title || '', value: blk.value, cover: blk.cover_url || null, description: blk.description || '', metadata: blk.metadata, sourceUrl: kind === 'Link' ? blk.value : blk.original_source_url || null });
+          for (const c of targetChannels) connect(c, { type: 'Block', id });
+          successful.push({ index, block_id: id });
+        });
+        S.batches = S.batches || new Map();
+        S.batches.set(batchId, { batch_id: batchId, status: 'completed', total: (b.blocks || []).length, successful_count: successful.length, failed_count: failed.length, successful, failed, created_at: new Date().toISOString(), completed_at: new Date().toISOString() });
+        return json({ batch_id: batchId, status: 'pending', total: (b.blocks || []).length }, 202);
+      }
+      if (method === 'GET' && (m = path.match(/^\/blocks\/batch\/(.+)$/))) {
+        const batch = S.batches?.get(m[1]);
+        if (!batch) return json({ error: 'Not Found' }, 404);
+        return json(batch);
       }
       if (method === 'POST' && path === '/connections') {
         const target = (b.channels || (b.channel_ids || []).map((id) => ({ id })))[0];
